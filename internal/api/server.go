@@ -18,16 +18,14 @@ import (
 	geminiprovider "github.com/langdag/langdag/internal/provider/gemini"
 	openaiprovider "github.com/langdag/langdag/internal/provider/openai"
 	"github.com/langdag/langdag/internal/storage/sqlite"
-	"github.com/langdag/langdag/internal/workflow"
 )
 
 // Server represents the HTTP API server.
 type Server struct {
-	httpServer  *http.Server
-	store       *sqlite.SQLiteStorage
-	convMgr     *conversation.Manager
-	workflowMgr *workflow.Manager
-	apiKey      string
+	httpServer *http.Server
+	store      *sqlite.SQLiteStorage
+	convMgr    *conversation.Manager
+	apiKey     string
 }
 
 // Config holds server configuration.
@@ -60,8 +58,8 @@ func New(cfg *Config, appConfig *config.Config) (*Server, error) {
 		return nil, err
 	}
 
-	// Create provider
-	prov, err := createProvider(appConfig)
+	// Create provider (may return a Router when routing is configured)
+	prov, err := createProvider(ctx, appConfig)
 	if err != nil {
 		store.Close()
 		return nil, err
@@ -69,13 +67,11 @@ func New(cfg *Config, appConfig *config.Config) (*Server, error) {
 
 	// Create managers
 	convMgr := conversation.NewManager(store, prov)
-	workflowMgr := workflow.NewManager(store)
 
 	s := &Server{
-		store:       store,
-		convMgr:     convMgr,
-		workflowMgr: workflowMgr,
-		apiKey:      cfg.APIKey,
+		store:   store,
+		convMgr: convMgr,
+		apiKey:  cfg.APIKey,
 	}
 
 	// Setup routes
@@ -94,10 +90,10 @@ func New(cfg *Config, appConfig *config.Config) (*Server, error) {
 	mux.HandleFunc("GET /nodes/{id}/tree", s.authMiddleware(s.handleGetTree))
 	mux.HandleFunc("DELETE /nodes/{id}", s.authMiddleware(s.handleDeleteNode))
 
-	// Workflow endpoints
-	mux.HandleFunc("GET /workflows", s.authMiddleware(s.handleListWorkflows))
-	mux.HandleFunc("POST /workflows", s.authMiddleware(s.handleCreateWorkflow))
-	mux.HandleFunc("POST /workflows/{id}/run", s.authMiddleware(s.handleRunWorkflow))
+	// Alias endpoints
+	mux.HandleFunc("PUT /nodes/{id}/aliases/{alias}", s.authMiddleware(s.handleCreateAlias))
+	mux.HandleFunc("GET /nodes/{id}/aliases", s.authMiddleware(s.handleListAliases))
+	mux.HandleFunc("DELETE /aliases/{alias}", s.authMiddleware(s.handleDeleteAlias))
 
 	s.httpServer = &http.Server{
 		Addr:         cfg.Addr,
@@ -185,49 +181,177 @@ func decodeJSON(r *http.Request, v interface{}) error {
 	return json.NewDecoder(r.Body).Decode(v)
 }
 
-// createProvider creates the LLM provider based on configuration.
-func createProvider(appConfig *config.Config) (provider.Provider, error) {
-	switch appConfig.Providers.Default {
-	case "mock":
-		cfg := mockprovider.Config{
-			Mode:          appConfig.Providers.Mock.Mode,
-			FixedResponse: appConfig.Providers.Mock.FixedResponse,
+// parseRetryConfig parses a config.RetryConfig into a provider.RetryConfig,
+// falling back to the global retry config for unset fields.
+func parseRetryConfig(rc config.RetryConfig, global provider.RetryConfig) provider.RetryConfig {
+	cfg := global
+	if rc.MaxRetries > 0 {
+		cfg.MaxRetries = rc.MaxRetries
+	}
+	if rc.BaseDelay != "" {
+		if d, err := time.ParseDuration(rc.BaseDelay); err == nil {
+			cfg.BaseDelay = d
 		}
-		if appConfig.Providers.Mock.Delay != "" {
-			d, err := time.ParseDuration(appConfig.Providers.Mock.Delay)
+	}
+	if rc.MaxDelay != "" {
+		if d, err := time.ParseDuration(rc.MaxDelay); err == nil {
+			cfg.MaxDelay = d
+		}
+	}
+	return cfg
+}
+
+// providerFactory is a function that creates a provider.
+type providerFactory func(ctx context.Context, appConfig *config.Config) (provider.Provider, error)
+
+// providerRegistry maps provider names to their factory functions.
+var providerRegistry = map[string]providerFactory{
+	"anthropic": func(_ context.Context, c *config.Config) (provider.Provider, error) {
+		if c.Providers.Anthropic.APIKey == "" {
+			return nil, fmt.Errorf("ANTHROPIC_API_KEY not set")
+		}
+		return anthropic.New(c.Providers.Anthropic.APIKey), nil
+	},
+	"anthropic-vertex": func(ctx context.Context, c *config.Config) (provider.Provider, error) {
+		vc := c.Providers.AnthropicVertex
+		if vc.ProjectID == "" || vc.Region == "" {
+			return nil, fmt.Errorf("VERTEX_PROJECT_ID and VERTEX_REGION must be set for anthropic-vertex")
+		}
+		return anthropic.NewVertex(ctx, vc.Region, vc.ProjectID)
+	},
+	"anthropic-bedrock": func(ctx context.Context, c *config.Config) (provider.Provider, error) {
+		return anthropic.NewBedrock(ctx)
+	},
+	"openai": func(_ context.Context, c *config.Config) (provider.Provider, error) {
+		if c.Providers.OpenAI.APIKey == "" {
+			return nil, fmt.Errorf("OPENAI_API_KEY not set")
+		}
+		return openaiprovider.New(c.Providers.OpenAI.APIKey, c.Providers.OpenAI.BaseURL), nil
+	},
+	"openai-azure": func(_ context.Context, c *config.Config) (provider.Provider, error) {
+		ac := c.Providers.OpenAIAzure
+		if ac.APIKey == "" || ac.Endpoint == "" {
+			return nil, fmt.Errorf("AZURE_OPENAI_API_KEY and AZURE_OPENAI_ENDPOINT must be set for openai-azure")
+		}
+		return openaiprovider.NewAzure(ac.APIKey, ac.Endpoint, ac.APIVersion), nil
+	},
+	"gemini": func(_ context.Context, c *config.Config) (provider.Provider, error) {
+		if c.Providers.Gemini.APIKey == "" {
+			return nil, fmt.Errorf("GEMINI_API_KEY not set")
+		}
+		return geminiprovider.New(c.Providers.Gemini.APIKey), nil
+	},
+	"gemini-vertex": func(ctx context.Context, c *config.Config) (provider.Provider, error) {
+		vc := c.Providers.GeminiVertex
+		if vc.ProjectID == "" || vc.Region == "" {
+			return nil, fmt.Errorf("VERTEX_PROJECT_ID and VERTEX_REGION must be set for gemini-vertex")
+		}
+		return geminiprovider.NewVertex(ctx, vc.ProjectID, vc.Region)
+	},
+	"mock": func(_ context.Context, c *config.Config) (provider.Provider, error) {
+		cfg := mockprovider.Config{
+			Mode:          c.Providers.Mock.Mode,
+			FixedResponse: c.Providers.Mock.FixedResponse,
+		}
+		if c.Providers.Mock.Delay != "" {
+			d, err := time.ParseDuration(c.Providers.Mock.Delay)
 			if err != nil {
 				return nil, fmt.Errorf("invalid mock delay: %w", err)
 			}
 			cfg.Delay = d
 		}
-		if appConfig.Providers.Mock.ChunkDelay != "" {
-			d, err := time.ParseDuration(appConfig.Providers.Mock.ChunkDelay)
+		if c.Providers.Mock.ChunkDelay != "" {
+			d, err := time.ParseDuration(c.Providers.Mock.ChunkDelay)
 			if err != nil {
 				return nil, fmt.Errorf("invalid mock chunk_delay: %w", err)
 			}
 			cfg.ChunkDelay = d
 		}
-		log.Printf("Using mock provider (mode: %s)", cfg.Mode)
 		return mockprovider.New(cfg), nil
-	case "openai":
-		apiKey := appConfig.Providers.OpenAI.APIKey
-		if apiKey == "" {
-			return nil, fmt.Errorf("OPENAI_API_KEY not set")
-		}
-		log.Printf("Using OpenAI-compatible provider (base_url: %s)", appConfig.Providers.OpenAI.BaseURL)
-		return openaiprovider.New(apiKey, appConfig.Providers.OpenAI.BaseURL), nil
-	case "gemini":
-		apiKey := appConfig.Providers.Gemini.APIKey
-		if apiKey == "" {
-			return nil, fmt.Errorf("GEMINI_API_KEY not set")
-		}
-		log.Printf("Using Gemini provider")
-		return geminiprovider.New(apiKey), nil
-	default:
-		apiKey := appConfig.Providers.Anthropic.APIKey
-		if apiKey == "" {
-			return nil, fmt.Errorf("ANTHROPIC_API_KEY not set")
-		}
-		return anthropic.New(apiKey), nil
+	},
+}
+
+// createProvider creates the LLM provider based on configuration.
+// When routing config is present, it builds a Router with weighted selection
+// and fallback. Otherwise, it creates a single provider with global retry.
+func createProvider(ctx context.Context, appConfig *config.Config) (provider.Provider, error) {
+	globalRetry := parseRetryConfig(appConfig.Retry, provider.DefaultRetryConfig())
+
+	// If routing is configured, build a Router
+	if len(appConfig.Providers.Routing) > 0 {
+		return createRouter(ctx, appConfig, globalRetry)
 	}
+
+	// Single-provider mode (backward compatible)
+	name := appConfig.Providers.Default
+	factory, ok := providerRegistry[name]
+	if !ok {
+		return nil, fmt.Errorf("unknown provider: %s", name)
+	}
+
+	prov, err := factory(ctx, appConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	log.Printf("Using provider: %s", name)
+	return provider.WithRetry(prov, globalRetry), nil
+}
+
+// createRouter builds a Router from the routing and fallback config.
+func createRouter(ctx context.Context, appConfig *config.Config, globalRetry provider.RetryConfig) (provider.Provider, error) {
+	// Build a cache of providers by name (so we don't create duplicates)
+	providerCache := map[string]provider.Provider{}
+
+	getOrCreate := func(name string) (provider.Provider, error) {
+		if p, ok := providerCache[name]; ok {
+			return p, nil
+		}
+		factory, ok := providerRegistry[name]
+		if !ok {
+			return nil, fmt.Errorf("unknown provider in routing config: %s", name)
+		}
+		p, err := factory(ctx, appConfig)
+		if err != nil {
+			return nil, nil // silently drop unavailable providers
+		}
+		providerCache[name] = p
+		return p, nil
+	}
+
+	// Build routing entries
+	var entries []provider.RouteEntry
+	for _, re := range appConfig.Providers.Routing {
+		p, err := getOrCreate(re.Provider)
+		if err != nil {
+			return nil, err
+		}
+		if p == nil {
+			log.Printf("Skipping unavailable provider in routing: %s", re.Provider)
+			continue
+		}
+		// Wrap with per-provider retry
+		retryCfg := parseRetryConfig(re.Retry, globalRetry)
+		wrapped := provider.WithRetry(p, retryCfg)
+		entries = append(entries, provider.RouteEntry{Provider: wrapped, Weight: re.Weight})
+		log.Printf("Routing: %s (weight=%d)", re.Provider, re.Weight)
+	}
+
+	// Build fallback chain
+	var fallbackProviders []provider.Provider
+	for _, name := range appConfig.Providers.FallbackOrder {
+		p, err := getOrCreate(name)
+		if err != nil {
+			return nil, err
+		}
+		if p == nil {
+			log.Printf("Skipping unavailable provider in fallback: %s", name)
+			continue
+		}
+		wrapped := provider.WithRetry(p, globalRetry)
+		fallbackProviders = append(fallbackProviders, wrapped)
+		log.Printf("Fallback: %s", name)
+	}
+
+	return provider.NewRouter(entries, fallbackProviders)
 }

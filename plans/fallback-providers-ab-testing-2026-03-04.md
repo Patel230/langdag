@@ -115,7 +115,7 @@ Extract shared protocol code from the current monolithic `anthropic.go`, then ad
 
 - [x] 5a: Extend config types — add per-variant config structs (Vertex: project_id, region; Bedrock: region; Azure: endpoint, api_version), `RoutingEntry` (provider name, weight, retry config), routing list, and fallback_order to `ProvidersConfig`
 - [x] 5b: Update `config.go` — add viper bindings for new provider variants, routing list, fallback_order, and env var overrides
-- [ ] 5c: Update `createProvider()` in `server.go` — provider registry mapping names to factory functions; when routing config is present, build all available providers, wrap each with per-provider retry (falling back to global), construct Router; otherwise keep single-provider behavior
+- [x] 5c: Update `createProvider()` in `server.go` — provider registry mapping names to factory functions; when routing config is present, build all available providers, wrap each with per-provider retry (falling back to global), construct Router; otherwise keep single-provider behavior
 
 ## Phase 6: Observability & Metadata
 
