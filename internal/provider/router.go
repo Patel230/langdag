@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"log"
 	"math/rand"
 
 	"github.com/langdag/langdag/pkg/types"
@@ -75,15 +76,16 @@ func (r *Router) Models() []types.ModelInfo {
 func (r *Router) Complete(ctx context.Context, req *types.CompletionRequest) (*types.CompletionResponse, error) {
 	primary := r.selectProvider()
 	if primary != nil {
+		log.Printf("router: selected provider %q for completion", primary.Name())
 		resp, err := primary.Complete(ctx, req)
 		if err == nil {
 			resp.Provider = primary.Name()
 			return resp, nil
 		}
-		// Primary failed, try fallback chain (skipping the primary)
+		log.Printf("router: provider %q failed, trying fallback chain: %v", primary.Name(), err)
 		return r.completeFallback(ctx, req, primary, err)
 	}
-	// No weighted entries, go straight to fallback
+	log.Printf("router: no weighted providers, trying fallback chain")
 	return r.completeFallback(ctx, req, nil, fmt.Errorf("router: no weighted providers available"))
 }
 
@@ -92,12 +94,15 @@ func (r *Router) Complete(ctx context.Context, req *types.CompletionRequest) (*t
 func (r *Router) Stream(ctx context.Context, req *types.CompletionRequest) (<-chan types.StreamEvent, error) {
 	primary := r.selectProvider()
 	if primary != nil {
+		log.Printf("router: selected provider %q for streaming", primary.Name())
 		ch, err := primary.Stream(ctx, req)
 		if err == nil {
 			return tagStreamProvider(ch, primary.Name()), nil
 		}
+		log.Printf("router: provider %q failed, trying fallback chain: %v", primary.Name(), err)
 		return r.streamFallback(ctx, req, primary, err)
 	}
+	log.Printf("router: no weighted providers, trying fallback chain")
 	return r.streamFallback(ctx, req, nil, fmt.Errorf("router: no weighted providers available"))
 }
 
@@ -126,13 +131,17 @@ func (r *Router) completeFallback(ctx context.Context, req *types.CompletionRequ
 		if skip != nil && p.Name() == skip.Name() {
 			continue
 		}
+		log.Printf("router: trying fallback provider %q", p.Name())
 		resp, err := p.Complete(ctx, req)
 		if err == nil {
+			log.Printf("router: fallback provider %q succeeded", p.Name())
 			resp.Provider = p.Name()
 			return resp, nil
 		}
+		log.Printf("router: fallback provider %q failed: %v", p.Name(), err)
 		lastErr = err
 	}
+	log.Printf("router: all providers failed")
 	return nil, fmt.Errorf("router: all providers failed, last error: %w", lastErr)
 }
 
@@ -141,12 +150,16 @@ func (r *Router) streamFallback(ctx context.Context, req *types.CompletionReques
 		if skip != nil && p.Name() == skip.Name() {
 			continue
 		}
+		log.Printf("router: trying fallback provider %q for streaming", p.Name())
 		ch, err := p.Stream(ctx, req)
 		if err == nil {
+			log.Printf("router: fallback provider %q succeeded", p.Name())
 			return tagStreamProvider(ch, p.Name()), nil
 		}
+		log.Printf("router: fallback provider %q failed: %v", p.Name(), err)
 		lastErr = err
 	}
+	log.Printf("router: all providers failed")
 	return nil, fmt.Errorf("router: all providers failed, last error: %w", lastErr)
 }
 
