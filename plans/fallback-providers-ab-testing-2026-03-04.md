@@ -103,8 +103,8 @@ Extract shared protocol code from the current monolithic `anthropic.go`, then ad
 ## Phase 3: Refactor Gemini Provider into Protocol + Variants
 
 - [x] 3a: Split `gemini.go` into `protocol.go` and `direct.go`
-- [ ] 3b: Add `vertex.go` — Vertex AI Gemini variant (different base URL, Google OAuth instead of API key)
-- [ ] 3c: Tests for Vertex Gemini variant
+- [x] 3b: Add `vertex.go` — Vertex AI Gemini variant (different base URL, Google OAuth instead of API key)
+- [x] 3c: Tests for Vertex Gemini variant
 
 ## Phase 4: Provider Router Core
 

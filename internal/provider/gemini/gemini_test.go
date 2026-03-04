@@ -241,6 +241,26 @@ func TestConvertTools(t *testing.T) {
 	}
 }
 
+func TestVertexProviderName(t *testing.T) {
+	p := &VertexProvider{}
+	if p.Name() != "gemini-vertex" {
+		t.Errorf("expected name 'gemini-vertex', got '%s'", p.Name())
+	}
+}
+
+func TestVertexProviderModels(t *testing.T) {
+	p := &VertexProvider{}
+	models := p.Models()
+	if len(models) == 0 {
+		t.Fatal("expected at least one model")
+	}
+	for _, m := range models {
+		if m.ID == "" || m.Name == "" {
+			t.Errorf("model missing required fields: %+v", m)
+		}
+	}
+}
+
 func TestBuildRequest_SystemInstruction(t *testing.T) {
 	req := &types.CompletionRequest{
 		Model:     "gemini-2.0-flash",
