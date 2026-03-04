@@ -1,4 +1,6 @@
-// Package gemini provides a Google Gemini provider implementation.
+// Package gemini provides Google Gemini provider implementations.
+// This file contains shared request building, response parsing, SSE streaming,
+// and message/tool conversion used by all Gemini variants (direct, Vertex).
 package gemini
 
 import (
@@ -13,97 +15,6 @@ import (
 
 	"github.com/langdag/langdag/pkg/types"
 )
-
-const defaultBaseURL = "https://generativelanguage.googleapis.com/v1beta"
-
-// Provider implements the provider interface for Google Gemini.
-type Provider struct {
-	apiKey  string
-	baseURL string
-	client  *http.Client
-}
-
-// New creates a new Gemini provider.
-func New(apiKey string) *Provider {
-	return &Provider{
-		apiKey:  apiKey,
-		baseURL: defaultBaseURL,
-		client:  &http.Client{},
-	}
-}
-
-// Name returns the provider name.
-func (p *Provider) Name() string {
-	return "gemini"
-}
-
-// Models returns the available models.
-func (p *Provider) Models() []types.ModelInfo {
-	return []types.ModelInfo{
-		{ID: "gemini-2.0-flash", Name: "Gemini 2.0 Flash", ContextWindow: 1048576, MaxOutput: 8192},
-		{ID: "gemini-2.5-pro-preview-05-06", Name: "Gemini 2.5 Pro", ContextWindow: 1048576, MaxOutput: 65536},
-	}
-}
-
-// Complete performs a synchronous completion request.
-func (p *Provider) Complete(ctx context.Context, req *types.CompletionRequest) (*types.CompletionResponse, error) {
-	body := buildRequest(req)
-	url := fmt.Sprintf("%s/models/%s:generateContent?key=%s", p.baseURL, req.Model, p.apiKey)
-
-	respBody, err := p.doRequest(ctx, url, body)
-	if err != nil {
-		return nil, err
-	}
-	defer respBody.Close()
-
-	var resp geminiResponse
-	if err := json.NewDecoder(respBody).Decode(&resp); err != nil {
-		return nil, fmt.Errorf("gemini: failed to decode response: %w", err)
-	}
-
-	return convertResponse(&resp), nil
-}
-
-// Stream performs a streaming completion request.
-func (p *Provider) Stream(ctx context.Context, req *types.CompletionRequest) (<-chan types.StreamEvent, error) {
-	body := buildRequest(req)
-	url := fmt.Sprintf("%s/models/%s:streamGenerateContent?alt=sse&key=%s", p.baseURL, req.Model, p.apiKey)
-
-	respBody, err := p.doRequest(ctx, url, body)
-	if err != nil {
-		return nil, err
-	}
-
-	events := make(chan types.StreamEvent, 100)
-	go func() {
-		defer close(events)
-		defer respBody.Close()
-		parseSSEStream(respBody, events)
-	}()
-
-	return events, nil
-}
-
-func (p *Provider) doRequest(ctx context.Context, url string, body []byte) (io.ReadCloser, error) {
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
-	if err != nil {
-		return nil, fmt.Errorf("gemini: failed to create request: %w", err)
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-
-	resp, err := p.client.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("gemini: request failed: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		defer resp.Body.Close()
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("gemini: API error (status %d): %s", resp.StatusCode, string(bodyBytes))
-	}
-
-	return resp.Body, nil
-}
 
 // --- Request types ---
 
@@ -129,7 +40,7 @@ type part struct {
 
 type inlineData struct {
 	MimeType string `json:"mimeType"`
-	Data     string `json:"data"` // base64
+	Data     string `json:"data"`
 }
 
 type fileData struct {
@@ -162,6 +73,27 @@ type generationConfig struct {
 	Temperature     *float64 `json:"temperature,omitempty"`
 	StopSequences   []string `json:"stop_sequences,omitempty"`
 }
+
+// --- Response types ---
+
+type geminiResponse struct {
+	Candidates    []candidate    `json:"candidates"`
+	UsageMetadata *usageMetadata `json:"usageMetadata,omitempty"`
+}
+
+type candidate struct {
+	Content      content `json:"content"`
+	FinishReason string  `json:"finishReason,omitempty"`
+}
+
+type usageMetadata struct {
+	PromptTokenCount        int `json:"promptTokenCount"`
+	CandidatesTokenCount    int `json:"candidatesTokenCount"`
+	CachedContentTokenCount int `json:"cachedContentTokenCount,omitempty"`
+	ThoughtsTokenCount      int `json:"thoughtsTokenCount,omitempty"`
+}
+
+// --- Request building ---
 
 func buildRequest(req *types.CompletionRequest) []byte {
 	gr := geminiRequest{
@@ -213,7 +145,6 @@ func convertMessages(messages []types.Message) []content {
 
 		c := content{Role: role}
 
-		// Try plain string
 		var text string
 		if err := json.Unmarshal(msg.Content, &text); err == nil {
 			c.Parts = []part{{Text: text}}
@@ -221,7 +152,6 @@ func convertMessages(messages []types.Message) []content {
 			continue
 		}
 
-		// Parse content blocks
 		var blocks []types.ContentBlock
 		if err := json.Unmarshal(msg.Content, &blocks); err != nil {
 			c.Parts = []part{{Text: string(msg.Content)}}
@@ -281,24 +211,7 @@ func convertTools(tools []types.ToolDefinition) []tool {
 	return []tool{{FunctionDeclarations: decls}}
 }
 
-// --- Response types ---
-
-type geminiResponse struct {
-	Candidates    []candidate    `json:"candidates"`
-	UsageMetadata *usageMetadata `json:"usageMetadata,omitempty"`
-}
-
-type candidate struct {
-	Content       content `json:"content"`
-	FinishReason  string  `json:"finishReason,omitempty"`
-}
-
-type usageMetadata struct {
-	PromptTokenCount        int `json:"promptTokenCount"`
-	CandidatesTokenCount    int `json:"candidatesTokenCount"`
-	CachedContentTokenCount int `json:"cachedContentTokenCount,omitempty"`
-	ThoughtsTokenCount      int `json:"thoughtsTokenCount,omitempty"`
-}
+// --- Response conversion ---
 
 func convertResponse(resp *geminiResponse) *types.CompletionResponse {
 	cr := &types.CompletionResponse{}
@@ -342,8 +255,6 @@ func mapUsage(u *usageMetadata) types.Usage {
 }
 
 // --- SSE streaming ---
-// Gemini sends full response snapshots via SSE. We diff consecutive
-// snapshots to produce text deltas.
 
 func parseSSEStream(body io.Reader, events chan<- types.StreamEvent) {
 	events <- types.StreamEvent{Type: types.StreamEventStart}
@@ -378,7 +289,6 @@ func parseSSEStream(body io.Reader, events chan<- types.StreamEvent) {
 
 		cand := resp.Candidates[0]
 
-		// Extract full text from this snapshot
 		var currentText string
 		for _, p := range cand.Content.Parts {
 			if p.Text != "" {
@@ -386,7 +296,6 @@ func parseSSEStream(body io.Reader, events chan<- types.StreamEvent) {
 			}
 		}
 
-		// Emit delta (diff from previous snapshot)
 		if len(currentText) > len(prevText) {
 			delta := currentText[len(prevText):]
 			events <- types.StreamEvent{
@@ -396,7 +305,6 @@ func parseSSEStream(body io.Reader, events chan<- types.StreamEvent) {
 			prevText = currentText
 		}
 
-		// Emit function calls when they appear
 		for _, p := range cand.Content.Parts {
 			if p.FunctionCall != nil {
 				args, _ := json.Marshal(p.FunctionCall.Args)
@@ -421,4 +329,29 @@ func parseSSEStream(body io.Reader, events chan<- types.StreamEvent) {
 		Type:     types.StreamEventDone,
 		Response: resp,
 	}
+}
+
+// doHTTPRequest performs an HTTP POST and returns the response body.
+func doHTTPRequest(ctx context.Context, client *http.Client, url string, body []byte, headers map[string]string) (io.ReadCloser, error) {
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("gemini: failed to create request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	for k, v := range headers {
+		httpReq.Header.Set(k, v)
+	}
+
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("gemini: request failed: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		defer resp.Body.Close()
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("gemini: API error (status %d): %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	return resp.Body, nil
 }
