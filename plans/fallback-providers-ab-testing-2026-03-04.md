@@ -108,8 +108,8 @@ Extract shared protocol code from the current monolithic `anthropic.go`, then ad
 
 ## Phase 4: Provider Router Core
 
-- [ ] 4a: Create `internal/provider/router.go` — `Router` struct implementing `Provider` interface with weighted random selection, fallback chain on failure, and credential availability filtering at construction time
-- [ ] 4b: Create `internal/provider/router_test.go` — unit tests for weighted selection distribution, fallback on error, skip unavailable providers, all-fail case
+- [x] 4a: Create `internal/provider/router.go` — `Router` struct implementing `Provider` interface with weighted random selection, fallback chain on failure, and credential availability filtering at construction time
+- [x] 4b: Create `internal/provider/router_test.go` — unit tests for weighted selection distribution, fallback on error, skip unavailable providers, all-fail case
 
 ## Phase 5: Config, Factory & Per-Provider Retry
 
