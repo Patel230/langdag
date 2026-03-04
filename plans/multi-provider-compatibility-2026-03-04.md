@@ -94,12 +94,12 @@ Implement an OpenAI-compatible provider that works with OpenAI, xAI/Grok, and Mi
 
 Implement Google Gemini provider.
 
-- [ ] 3a: Create `internal/provider/gemini/gemini.go` implementing `Provider` interface
-- [ ] 3b: Implement message conversion: unified format to/from Gemini's `contents`/`parts` format (role `assistant`→`model`, tool blocks→`functionCall`/`functionResponse` parts)
-- [ ] 3c: Implement token usage mapping: `promptTokenCount`→`InputTokens`, `candidatesTokenCount`→`OutputTokens`, `cachedContentTokenCount`→`CacheReadInputTokens`, `thoughtsTokenCount`→`ReasoningTokens`
-- [ ] 3d: Implement streaming: Gemini sends full response snapshots via SSE — diff consecutive snapshots to produce text deltas for unified `StreamEvent`
-- [ ] 3e: Wire into provider factory — `LANGDAG_PROVIDER=gemini` with `GEMINI_API_KEY`
-- [ ] 3f: Add unit tests
+- [x] 3a: Create `internal/provider/gemini/gemini.go` implementing `Provider` interface
+- [x] 3b: Implement message conversion: unified format to/from Gemini's `contents`/`parts` format (role `assistant`→`model`, tool blocks→`functionCall`/`functionResponse` parts)
+- [x] 3c: Implement token usage mapping: `promptTokenCount`→`InputTokens`, `candidatesTokenCount`→`OutputTokens`, `cachedContentTokenCount`→`CacheReadInputTokens`, `thoughtsTokenCount`→`ReasoningTokens`
+- [x] 3d: Implement streaming: Gemini sends full response snapshots via SSE — diff consecutive snapshots to produce text deltas for unified `StreamEvent`
+- [x] 3e: Wire into provider factory — `LANGDAG_PROVIDER=gemini` with `GEMINI_API_KEY`
+- [x] 3f: Add unit tests
 
 ---
 

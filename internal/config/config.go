@@ -30,6 +30,7 @@ type ProvidersConfig struct {
 	Default   string             `mapstructure:"default"`
 	Anthropic ProviderConfig     `mapstructure:"anthropic"`
 	OpenAI    ProviderConfig     `mapstructure:"openai"`
+	Gemini    ProviderConfig     `mapstructure:"gemini"`
 	Mock      MockProviderConfig `mapstructure:"mock"`
 }
 
@@ -105,6 +106,7 @@ func Load() (*Config, error) {
 	v.BindEnv("providers.anthropic.api_key", "ANTHROPIC_API_KEY")
 	v.BindEnv("providers.openai.api_key", "OPENAI_API_KEY")
 	v.BindEnv("providers.openai.base_url", "OPENAI_BASE_URL")
+	v.BindEnv("providers.gemini.api_key", "GEMINI_API_KEY")
 	v.BindEnv("providers.mock.mode", "LANGDAG_MOCK_MODE")
 	v.BindEnv("providers.mock.fixed_response", "LANGDAG_MOCK_RESPONSE")
 	v.BindEnv("providers.mock.delay", "LANGDAG_MOCK_DELAY")

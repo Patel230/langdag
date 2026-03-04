@@ -15,6 +15,7 @@ import (
 	"github.com/langdag/langdag/internal/provider"
 	"github.com/langdag/langdag/internal/provider/anthropic"
 	mockprovider "github.com/langdag/langdag/internal/provider/mock"
+	geminiprovider "github.com/langdag/langdag/internal/provider/gemini"
 	openaiprovider "github.com/langdag/langdag/internal/provider/openai"
 	"github.com/langdag/langdag/internal/storage/sqlite"
 	"github.com/langdag/langdag/internal/workflow"
@@ -215,6 +216,13 @@ func createProvider(appConfig *config.Config) (provider.Provider, error) {
 		}
 		log.Printf("Using OpenAI-compatible provider (base_url: %s)", appConfig.Providers.OpenAI.BaseURL)
 		return openaiprovider.New(apiKey, appConfig.Providers.OpenAI.BaseURL), nil
+	case "gemini":
+		apiKey := appConfig.Providers.Gemini.APIKey
+		if apiKey == "" {
+			return nil, fmt.Errorf("GEMINI_API_KEY not set")
+		}
+		log.Printf("Using Gemini provider")
+		return geminiprovider.New(apiKey), nil
 	default:
 		apiKey := appConfig.Providers.Anthropic.APIKey
 		if apiKey == "" {
