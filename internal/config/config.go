@@ -14,8 +14,8 @@ type Config struct {
 	Storage   StorageConfig   `mapstructure:"storage"`
 	Providers ProvidersConfig `mapstructure:"providers"`
 	Server    ServerConfig    `mapstructure:"server"`
-	Logging   LoggingConfig   `mapstructure:"logging"`
-	Execution ExecutionConfig `mapstructure:"execution"`
+	Logging LoggingConfig `mapstructure:"logging"`
+	Retry   RetryConfig   `mapstructure:"retry"`
 }
 
 // StorageConfig represents storage configuration.
@@ -27,17 +27,54 @@ type StorageConfig struct {
 
 // ProvidersConfig represents provider configurations.
 type ProvidersConfig struct {
-	Default   string             `mapstructure:"default"`
-	Anthropic ProviderConfig     `mapstructure:"anthropic"`
-	OpenAI    ProviderConfig     `mapstructure:"openai"`
-	Gemini    ProviderConfig     `mapstructure:"gemini"`
+	Default string `mapstructure:"default"`
+
+	// Direct providers
+	Anthropic ProviderConfig `mapstructure:"anthropic"`
+	OpenAI    ProviderConfig `mapstructure:"openai"`
+	Gemini    ProviderConfig `mapstructure:"gemini"`
 	Mock      MockProviderConfig `mapstructure:"mock"`
+
+	// Cloud platform variants
+	AnthropicVertex  VertexConfig  `mapstructure:"anthropic-vertex"`
+	AnthropicBedrock BedrockConfig `mapstructure:"anthropic-bedrock"`
+	OpenAIAzure      AzureConfig   `mapstructure:"openai-azure"`
+	GeminiVertex     VertexConfig  `mapstructure:"gemini-vertex"`
+
+	// Routing and fallback
+	Routing       []RoutingEntry `mapstructure:"routing"`
+	FallbackOrder []string       `mapstructure:"fallback_order"`
 }
 
 // ProviderConfig represents a single provider configuration.
 type ProviderConfig struct {
 	APIKey  string `mapstructure:"api_key"`
 	BaseURL string `mapstructure:"base_url"`
+}
+
+// VertexConfig represents Vertex AI provider configuration.
+type VertexConfig struct {
+	ProjectID string `mapstructure:"project_id"`
+	Region    string `mapstructure:"region"`
+}
+
+// BedrockConfig represents AWS Bedrock provider configuration.
+type BedrockConfig struct {
+	Region string `mapstructure:"region"`
+}
+
+// AzureConfig represents Azure OpenAI provider configuration.
+type AzureConfig struct {
+	APIKey     string `mapstructure:"api_key"`
+	Endpoint   string `mapstructure:"endpoint"`
+	APIVersion string `mapstructure:"api_version"`
+}
+
+// RoutingEntry represents a single entry in the routing configuration.
+type RoutingEntry struct {
+	Provider string      `mapstructure:"provider"`
+	Weight   int         `mapstructure:"weight"`
+	Retry    RetryConfig `mapstructure:"retry"`
 }
 
 // MockProviderConfig represents mock provider configuration.
@@ -61,11 +98,11 @@ type LoggingConfig struct {
 	Format string `mapstructure:"format"`
 }
 
-// ExecutionConfig represents execution configuration.
-type ExecutionConfig struct {
-	DefaultTimeout string `mapstructure:"default_timeout"`
-	MaxParallel    int    `mapstructure:"max_parallel"`
-	RetryAttempts  int    `mapstructure:"retry_attempts"`
+// RetryConfig represents retry configuration for LLM provider calls.
+type RetryConfig struct {
+	MaxRetries int    `mapstructure:"max_retries"`
+	BaseDelay  string `mapstructure:"base_delay"`
+	MaxDelay   string `mapstructure:"max_delay"`
 }
 
 // Load loads the configuration from files and environment variables.
@@ -112,6 +149,9 @@ func Load() (*Config, error) {
 	v.BindEnv("providers.mock.delay", "LANGDAG_MOCK_DELAY")
 	v.BindEnv("providers.mock.chunk_delay", "LANGDAG_MOCK_CHUNK_DELAY")
 	v.BindEnv("storage.path", "LANGDAG_STORAGE_PATH")
+	v.BindEnv("retry.max_retries", "LANGDAG_RETRY_MAX")
+	v.BindEnv("retry.base_delay", "LANGDAG_RETRY_BASE_DELAY")
+	v.BindEnv("retry.max_delay", "LANGDAG_RETRY_MAX_DELAY")
 
 	// Unmarshal config
 	var cfg Config
@@ -144,10 +184,10 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("logging.level", "info")
 	v.SetDefault("logging.format", "text")
 
-	// Execution defaults
-	v.SetDefault("execution.default_timeout", "300s")
-	v.SetDefault("execution.max_parallel", 10)
-	v.SetDefault("execution.retry_attempts", 3)
+	// Retry defaults
+	v.SetDefault("retry.max_retries", 3)
+	v.SetDefault("retry.base_delay", "1s")
+	v.SetDefault("retry.max_delay", "30s")
 }
 
 // GetDefaultStoragePath returns the default storage path.
