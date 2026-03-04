@@ -1,0 +1,76 @@
+# LangDAG example configuration
+#
+# This shows multi-provider routing with weighted A/B testing,
+# fallback chains, and per-provider retry configuration.
+#
+# Place this file at ./config.yaml, ./langdag/config.yaml,
+# or ~/.config/langdag/config.yaml
+
+storage:
+  driver: sqlite
+  path: ./langdag.db
+
+server:
+  host: 0.0.0.0
+  port: 8080
+
+logging:
+  level: info
+  format: text
+
+# Global retry defaults (applied when per-provider retry is not set)
+retry:
+  max_retries: 3
+  base_delay: 1s
+  max_delay: 30s
+
+providers:
+  # Direct API providers — configure credentials for each
+  anthropic:
+    api_key: ${ANTHROPIC_API_KEY}
+
+  openai:
+    api_key: ${OPENAI_API_KEY}
+
+  gemini:
+    api_key: ${GEMINI_API_KEY}
+
+  # Cloud platform variants
+  anthropic-vertex:
+    project_id: my-gcp-project
+    region: us-east5
+
+  anthropic-bedrock:
+    region: us-east-1
+
+  openai-azure:
+    api_key: ${AZURE_OPENAI_API_KEY}
+    endpoint: https://my-resource.openai.azure.com
+    api_version: "2024-02-01"
+
+  gemini-vertex:
+    project_id: my-gcp-project
+    region: us-central1
+
+  # Weighted routing — requests are distributed probabilistically.
+  # Providers without valid credentials are automatically excluded.
+  routing:
+    - provider: anthropic
+      weight: 80
+      retry:
+        max_retries: 3
+        base_delay: 1s
+        max_delay: 30s
+    - provider: anthropic-vertex
+      weight: 20
+      retry:
+        max_retries: 2
+        base_delay: 500ms
+        max_delay: 10s
+
+  # Fallback order — tried sequentially if the selected provider fails
+  # after exhausting its retries. The failed provider is skipped.
+  fallback_order:
+    - anthropic
+    - anthropic-vertex
+    - openai
