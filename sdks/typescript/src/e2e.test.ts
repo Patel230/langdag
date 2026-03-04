@@ -37,26 +37,25 @@ describe.skipIf(!E2E_URL)('E2E Tests', () => {
     expect(node2.id).toBeTruthy();
     expect(node2.content).toBeTruthy();
 
-    // Get the tree
-    const tree = await client.getTree(node1.id);
-    expect(tree.length).toBeGreaterThanOrEqual(4);
-    expect(tree[0]).toBeInstanceOf(Node);
-
-    // List roots
+    // List roots and find our conversation's root
     const roots = await client.listRoots();
     expect(roots.length).toBeGreaterThan(0);
     expect(roots[0]).toBeInstanceOf(Node);
+
+    // Get the full tree from the root (not from the assistant node)
+    const rootNode = roots.find(n => !n.parentId);
+    expect(rootNode).toBeDefined();
+    const tree = await client.getTree(rootNode!.id);
+    expect(tree.length).toBeGreaterThanOrEqual(4);
+    expect(tree[0]).toBeInstanceOf(Node);
 
     // Get single node
     const node = await client.getNode(node1.id);
     expect(node).toBeInstanceOf(Node);
     expect(node.id).toBeTruthy();
 
-    // Delete — find root node
-    const rootNode = tree.find(n => !n.parentId);
-    if (rootNode) {
-      await client.deleteNode(rootNode.id);
-    }
+    // Delete
+    await client.deleteNode(rootNode!.id);
   });
 
   it('streaming prompt', async () => {
@@ -98,15 +97,15 @@ describe.skipIf(!E2E_URL)('E2E Tests', () => {
     expect(node2).toBeInstanceOf(Node);
     expect(node2.content).toBeTruthy();
 
-    // Get tree to verify branching
-    const tree = await client.getTree(node1.id);
+    // Get tree from root to verify branching
+    const roots = await client.listRoots();
+    const rootNode = roots.find(n => !n.parentId);
+    expect(rootNode).toBeDefined();
+    const tree = await client.getTree(rootNode!.id);
     expect(tree.length).toBeGreaterThanOrEqual(4);
 
     // Clean up - delete the root node
-    const rootNode = tree.find(n => !n.parentId);
-    if (rootNode) {
-      await client.deleteNode(rootNode.id);
-    }
+    await client.deleteNode(rootNode!.id);
   });
 
   it('node.promptStream (streaming continuation)', async () => {
@@ -130,9 +129,9 @@ describe.skipIf(!E2E_URL)('E2E Tests', () => {
     expect(node2).toBeInstanceOf(Node);
     expect(node2.content).toBeTruthy();
 
-    // Clean up
-    const tree = await client.getTree(node1.id);
-    const rootNode = tree.find(n => !n.parentId);
+    // Clean up - find root via listRoots
+    const roots = await client.listRoots();
+    const rootNode = roots.find(n => !n.parentId);
     if (rootNode) {
       await client.deleteNode(rootNode.id);
     }
@@ -163,8 +162,11 @@ describe.skipIf(!E2E_URL)('E2E Tests', () => {
 
     const node1 = await client.prompt('Test metadata fields');
 
-    // Get the tree to see full node details
-    const tree = await client.getTree(node1.id);
+    // Get the full tree from the root to see all node details
+    const roots = await client.listRoots();
+    const rootNode = roots.find(n => !n.parentId);
+    expect(rootNode).toBeDefined();
+    const tree = await client.getTree(rootNode!.id);
     expect(tree.length).toBeGreaterThanOrEqual(2);
 
     // Find user and assistant nodes
@@ -186,10 +188,7 @@ describe.skipIf(!E2E_URL)('E2E Tests', () => {
     expect(assistantNode!.parentId).toBeTruthy();
 
     // Clean up
-    const rootNode = tree.find(n => !n.parentId);
-    if (rootNode) {
-      await client.deleteNode(rootNode.id);
-    }
+    await client.deleteNode(rootNode!.id);
   });
 
   it('streaming content accumulation', async () => {
@@ -224,9 +223,9 @@ describe.skipIf(!E2E_URL)('E2E Tests', () => {
     expect(resolved.id).toBe(node1.id);
     expect(resolved.content).toBeTruthy();
 
-    // Clean up
-    const tree = await client.getTree(node1.id);
-    const rootNode = tree.find(n => !n.parentId);
+    // Clean up - find root via listRoots
+    const roots = await client.listRoots();
+    const rootNode = roots.find(n => !n.parentId);
     if (rootNode) {
       await client.deleteNode(rootNode.id);
     }
