@@ -2,9 +2,11 @@
 package config
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/viper"
 )
@@ -153,6 +155,16 @@ func Load() (*Config, error) {
 	v.BindEnv("retry.base_delay", "LANGDAG_RETRY_BASE_DELAY")
 	v.BindEnv("retry.max_delay", "LANGDAG_RETRY_MAX_DELAY")
 
+	// Provider variant env vars
+	v.BindEnv("providers.anthropic-vertex.project_id", "VERTEX_PROJECT_ID")
+	v.BindEnv("providers.anthropic-vertex.region", "VERTEX_REGION")
+	v.BindEnv("providers.anthropic-bedrock.region", "AWS_REGION")
+	v.BindEnv("providers.openai-azure.api_key", "AZURE_OPENAI_API_KEY")
+	v.BindEnv("providers.openai-azure.endpoint", "AZURE_OPENAI_ENDPOINT")
+	v.BindEnv("providers.openai-azure.api_version", "AZURE_OPENAI_API_VERSION")
+	v.BindEnv("providers.gemini-vertex.project_id", "VERTEX_PROJECT_ID")
+	v.BindEnv("providers.gemini-vertex.region", "VERTEX_REGION")
+
 	// Unmarshal config
 	var cfg Config
 	if err := v.Unmarshal(&cfg); err != nil {
@@ -161,6 +173,23 @@ func Load() (*Config, error) {
 
 	// Expand environment variables in paths
 	cfg.Storage.Path = os.ExpandEnv(cfg.Storage.Path)
+
+	// Parse LANGDAG_ROUTING env var (JSON array)
+	if routingJSON := os.Getenv("LANGDAG_ROUTING"); routingJSON != "" {
+		var entries []RoutingEntry
+		if err := json.Unmarshal([]byte(routingJSON), &entries); err != nil {
+			return nil, fmt.Errorf("error parsing LANGDAG_ROUTING: %w", err)
+		}
+		cfg.Providers.Routing = entries
+	}
+
+	// Parse LANGDAG_FALLBACK_ORDER env var (comma-separated)
+	if fallbackStr := os.Getenv("LANGDAG_FALLBACK_ORDER"); fallbackStr != "" {
+		cfg.Providers.FallbackOrder = strings.Split(fallbackStr, ",")
+		for i, s := range cfg.Providers.FallbackOrder {
+			cfg.Providers.FallbackOrder[i] = strings.TrimSpace(s)
+		}
+	}
 
 	return &cfg, nil
 }
