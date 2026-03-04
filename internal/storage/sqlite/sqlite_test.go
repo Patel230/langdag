@@ -317,6 +317,123 @@ func TestDeleteNode(t *testing.T) {
 	}
 }
 
+func TestAliasCreateAndResolve(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+
+	node := &types.Node{
+		ID:        "alias-node-1",
+		Sequence:  0,
+		NodeType:  types.NodeTypeUser,
+		Content:   "alias test",
+		CreatedAt: time.Now(),
+	}
+	if err := store.CreateNode(ctx, node); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create alias
+	if err := store.CreateAlias(ctx, "alias-node-1", "my-bookmark"); err != nil {
+		t.Fatalf("CreateAlias: %v", err)
+	}
+
+	// Resolve by alias
+	got, err := store.GetNodeByAlias(ctx, "my-bookmark")
+	if err != nil {
+		t.Fatalf("GetNodeByAlias: %v", err)
+	}
+	if got == nil {
+		t.Fatal("GetNodeByAlias: returned nil")
+	}
+	if got.ID != "alias-node-1" {
+		t.Errorf("ID = %q, want %q", got.ID, "alias-node-1")
+	}
+
+	// List aliases
+	aliases, err := store.ListAliases(ctx, "alias-node-1")
+	if err != nil {
+		t.Fatalf("ListAliases: %v", err)
+	}
+	if len(aliases) != 1 || aliases[0] != "my-bookmark" {
+		t.Errorf("aliases = %v, want [my-bookmark]", aliases)
+	}
+
+	// Delete alias
+	if err := store.DeleteAlias(ctx, "my-bookmark"); err != nil {
+		t.Fatalf("DeleteAlias: %v", err)
+	}
+
+	got, err = store.GetNodeByAlias(ctx, "my-bookmark")
+	if err != nil {
+		t.Fatalf("GetNodeByAlias after delete: %v", err)
+	}
+	if got != nil {
+		t.Error("GetNodeByAlias: expected nil after delete")
+	}
+}
+
+func TestAliasMultiple(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+
+	node := &types.Node{
+		ID:        "multi-alias-node",
+		Sequence:  0,
+		NodeType:  types.NodeTypeUser,
+		Content:   "multi alias test",
+		CreatedAt: time.Now(),
+	}
+	if err := store.CreateNode(ctx, node); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, alias := range []string{"alpha", "beta", "gamma"} {
+		if err := store.CreateAlias(ctx, "multi-alias-node", alias); err != nil {
+			t.Fatalf("CreateAlias(%s): %v", alias, err)
+		}
+	}
+
+	aliases, err := store.ListAliases(ctx, "multi-alias-node")
+	if err != nil {
+		t.Fatalf("ListAliases: %v", err)
+	}
+	if len(aliases) != 3 {
+		t.Fatalf("got %d aliases, want 3", len(aliases))
+	}
+}
+
+func TestAliasCascadeOnNodeDelete(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+
+	node := &types.Node{
+		ID:        "cascade-node",
+		Sequence:  0,
+		NodeType:  types.NodeTypeUser,
+		Content:   "cascade test",
+		CreatedAt: time.Now(),
+	}
+	if err := store.CreateNode(ctx, node); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CreateAlias(ctx, "cascade-node", "will-be-deleted"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Delete the node — alias should cascade
+	if err := store.DeleteNode(ctx, "cascade-node"); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := store.GetNodeByAlias(ctx, "will-be-deleted")
+	if err != nil {
+		t.Fatalf("GetNodeByAlias after cascade: %v", err)
+	}
+	if got != nil {
+		t.Error("alias still resolves after node deletion")
+	}
+}
+
 func TestDeleteNodePartialSubtree(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()

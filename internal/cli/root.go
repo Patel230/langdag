@@ -20,20 +20,15 @@ var rootCmd = &cobra.Command{
 	Long: `LangDAG is a high-performance Go tool for managing LLM conversations as
 directed acyclic graphs (DAGs).
 
-It provides two modes:
-  - Workflow mode: Pre-defined pipelines with static DAG structure
-  - Chat mode: Interactive sessions that grow dynamically
-
-Both modes create DAG instances that can be inspected and continued.
+Every conversation is a tree of nodes that grows as you chat.
+Branch from any node to explore alternative paths.
 
 Examples:
   langdag prompt "What is LangDAG?"   # Start new conversation
   langdag prompt <node-id> "More"    # Continue from a node
   langdag ls                         # List all conversations
   langdag show <id>                  # Show node tree
-  langdag rm <id>                    # Delete node + subtree
-  langdag workflow create <file>     # Create workflow template
-  langdag workflow ls                # List all workflows`,
+  langdag rm <id>                    # Delete node + subtree`,
 }
 
 // Execute runs the root command.
@@ -53,7 +48,6 @@ func init() {
 	rootCmd.AddCommand(showCmd)
 	rootCmd.AddCommand(rmCmd)
 	rootCmd.AddCommand(promptCmd)
-	rootCmd.AddCommand(workflowCmd)
 	rootCmd.AddCommand(configCmd)
 	rootCmd.AddCommand(versionCmd)
 }

@@ -6,11 +6,7 @@
 // Enums
 // ============================================================================
 
-export type NodeType = 'user' | 'assistant' | 'tool_call' | 'tool_result' | 'llm' | 'input' | 'output';
-
-export type WorkflowNodeType = 'llm' | 'tool' | 'branch' | 'merge' | 'input' | 'output';
-
-export type RunStatus = 'pending' | 'running' | 'completed' | 'failed';
+export type NodeType = 'user' | 'assistant' | 'tool_call' | 'tool_result';
 
 // ============================================================================
 // Core Models
@@ -98,95 +94,6 @@ export interface SSEErrorEvent {
 export type SSEEvent = SSEStartEvent | SSEDeltaEvent | SSEDoneEvent | SSEErrorEvent;
 
 // ============================================================================
-// Workflow Types
-// ============================================================================
-
-/**
- * Workflow template
- */
-export interface Workflow {
-  id: string;
-  name: string;
-  version: number;
-  description?: string;
-  created_at: string;
-  updated_at: string;
-}
-
-/**
- * Default settings for workflow execution
- */
-export interface WorkflowDefaults {
-  provider?: string;
-  model?: string;
-  max_tokens?: number;
-  temperature?: number;
-}
-
-/**
- * Tool definition for workflow
- */
-export interface ToolDefinition {
-  name: string;
-  description: string;
-  input_schema: Record<string, unknown>;
-}
-
-/**
- * Node definition within a workflow
- */
-export interface WorkflowNode {
-  id: string;
-  type: WorkflowNodeType;
-  content?: Record<string, unknown>;
-  model?: string;
-  system?: string;
-  prompt?: string;
-  tools?: string[];
-  handler?: string;
-  condition?: string;
-}
-
-/**
- * Edge definition within a workflow
- */
-export interface WorkflowEdge {
-  from: string;
-  to: string;
-  condition?: string;
-  transform?: string;
-}
-
-/**
- * Request to create a new workflow
- */
-export interface CreateWorkflowRequest {
-  name: string;
-  description?: string;
-  defaults?: WorkflowDefaults;
-  tools?: ToolDefinition[];
-  nodes: WorkflowNode[];
-  edges?: WorkflowEdge[];
-}
-
-/**
- * Request to run a workflow
- */
-export interface RunWorkflowRequest {
-  input?: Record<string, unknown>;
-  stream?: boolean;
-}
-
-/**
- * Response from running a workflow
- */
-export interface RunWorkflowResponse {
-  dag_id: string;
-  status: RunStatus;
-  output?: Record<string, unknown>;
-}
-
-// ============================================================================
 // Client Configuration Types
 // ============================================================================
 
@@ -214,26 +121,6 @@ export interface LangDAGClientOptions {
    * Custom fetch function (defaults to global fetch)
    */
   fetch?: typeof fetch;
-}
-
-/**
- * Options for creating a workflow
- */
-export interface CreateWorkflowOptions {
-  name: string;
-  description?: string;
-  defaults?: WorkflowDefaults;
-  tools?: ToolDefinition[];
-  nodes: WorkflowNode[];
-  edges?: WorkflowEdge[];
-}
-
-/**
- * Options for running a workflow
- */
-export interface RunWorkflowOptions {
-  input?: Record<string, unknown>;
-  stream?: boolean;
 }
 
 /**

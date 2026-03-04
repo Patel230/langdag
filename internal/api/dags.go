@@ -111,6 +111,70 @@ func (s *Server) handleDeleteNode(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted", "id": node.ID})
 }
 
+// handleCreateAlias creates an alias for a node.
+func (s *Server) handleCreateAlias(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	nodeID := r.PathValue("id")
+	alias := r.PathValue("alias")
+
+	node, err := s.convMgr.ResolveNode(ctx, nodeID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if node == nil {
+		writeError(w, http.StatusNotFound, "node not found")
+		return
+	}
+
+	if err := s.convMgr.CreateAlias(ctx, node.ID, alias); err != nil {
+		writeError(w, http.StatusConflict, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]string{"alias": alias, "node_id": node.ID})
+}
+
+// handleListAliases lists aliases for a node.
+func (s *Server) handleListAliases(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	nodeID := r.PathValue("id")
+
+	node, err := s.convMgr.ResolveNode(ctx, nodeID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if node == nil {
+		writeError(w, http.StatusNotFound, "node not found")
+		return
+	}
+
+	aliases, err := s.convMgr.ListAliases(ctx, node.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	if aliases == nil {
+		aliases = []string{}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{"node_id": node.ID, "aliases": aliases})
+}
+
+// handleDeleteAlias deletes an alias.
+func (s *Server) handleDeleteAlias(w http.ResponseWriter, r *http.Request) {
+	alias := r.PathValue("alias")
+
+	if err := s.convMgr.DeleteAlias(r.Context(), alias); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+}
+
 func toNodeResponse(n *types.Node) NodeResponse {
 	return NodeResponse{
 		ID:           n.ID,

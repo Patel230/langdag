@@ -42,7 +42,7 @@ var lsCmd = &cobra.Command{
 	Use:     "ls",
 	Aliases: []string{"list"},
 	Short:   "List all conversations",
-	Long:    `List all root nodes (conversations and workflow runs).`,
+	Long:    `List all root nodes (conversations).`,
 	Run:     runNodeList,
 }
 

@@ -9,10 +9,6 @@ import type {
   NodeType,
   PromptOptions,
   SSEEvent,
-  Workflow,
-  CreateWorkflowOptions,
-  RunWorkflowOptions,
-  RunWorkflowResponse,
   DeleteResponse,
   HealthResponse,
 } from './types.js';
@@ -424,42 +420,34 @@ export class LangDAGClient {
   }
 
   // ===========================================================================
-  // Workflow Methods
+  // Alias Methods
   // ===========================================================================
 
-  async listWorkflows(): Promise<Workflow[]> {
-    return this.request<Workflow[]>('GET', '/workflows');
+  /**
+   * Create a human-readable alias for a node
+   */
+  async createAlias(nodeId: string, alias: string): Promise<void> {
+    await this.request<{ alias: string; node_id: string }>(
+      'PUT',
+      `/nodes/${encodeURIComponent(nodeId)}/aliases/${encodeURIComponent(alias)}`,
+    );
   }
 
-  async createWorkflow(options: CreateWorkflowOptions): Promise<Workflow> {
-    return this.request<Workflow>('POST', '/workflows', {
-      name: options.name,
-      description: options.description,
-      defaults: options.defaults,
-      tools: options.tools,
-      nodes: options.nodes,
-      edges: options.edges,
-    });
+  /**
+   * Delete an alias
+   */
+  async deleteAlias(alias: string): Promise<void> {
+    await this.request<{ status: string }>('DELETE', `/aliases/${encodeURIComponent(alias)}`);
   }
 
-  runWorkflow(workflowId: string, options: RunWorkflowOptions & { stream: true }): AsyncGenerator<SSEEvent, void, undefined>;
-  runWorkflow(workflowId: string, options?: RunWorkflowOptions & { stream?: false }): Promise<RunWorkflowResponse>;
-  runWorkflow(workflowId: string, options?: RunWorkflowOptions): Promise<RunWorkflowResponse> | AsyncGenerator<SSEEvent, void, undefined>;
-  runWorkflow(workflowId: string, options: RunWorkflowOptions = {}): Promise<RunWorkflowResponse> | AsyncGenerator<SSEEvent, void, undefined> {
-    if (options.stream) {
-      return this.runWorkflowStream(workflowId, options);
-    }
-    return this.request<RunWorkflowResponse>('POST', `/workflows/${encodeURIComponent(workflowId)}/run`, {
-      input: options.input,
-      stream: false,
-    });
-  }
-
-  private async *runWorkflowStream(workflowId: string, options: RunWorkflowOptions): AsyncGenerator<SSEEvent, void, undefined> {
-    const stream = await this.requestStream('POST', `/workflows/${encodeURIComponent(workflowId)}/run`, {
-      input: options.input,
-      stream: true,
-    });
-    yield* parseSSEStream(stream);
+  /**
+   * List all aliases for a node
+   */
+  async listAliases(nodeId: string): Promise<string[]> {
+    const resp = await this.request<{ node_id: string; aliases: string[] }>(
+      'GET',
+      `/nodes/${encodeURIComponent(nodeId)}/aliases`,
+    );
+    return resp.aliases;
   }
 }

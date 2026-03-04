@@ -7,21 +7,13 @@ import (
 	"github.com/langdag/langdag/pkg/types"
 )
 
-// Storage defines the interface for persisting workflows and nodes.
+// Storage defines the interface for persisting nodes.
 type Storage interface {
 	// Initialize the storage (run migrations, etc.)
 	Init(ctx context.Context) error
 
 	// Close the storage connection
 	Close() error
-
-	// Workflow operations (templates)
-	CreateWorkflow(ctx context.Context, workflow *types.Workflow) error
-	GetWorkflow(ctx context.Context, id string) (*types.Workflow, error)
-	GetWorkflowByName(ctx context.Context, name string) (*types.Workflow, error)
-	ListWorkflows(ctx context.Context) ([]*types.Workflow, error)
-	UpdateWorkflow(ctx context.Context, workflow *types.Workflow) error
-	DeleteWorkflow(ctx context.Context, id string) error
 
 	// Node operations
 	CreateNode(ctx context.Context, node *types.Node) error
@@ -33,4 +25,10 @@ type Storage interface {
 	ListRootNodes(ctx context.Context) ([]*types.Node, error)
 	UpdateNode(ctx context.Context, node *types.Node) error
 	DeleteNode(ctx context.Context, id string) error
+
+	// Alias operations
+	CreateAlias(ctx context.Context, nodeID, alias string) error
+	DeleteAlias(ctx context.Context, alias string) error
+	GetNodeByAlias(ctx context.Context, alias string) (*types.Node, error)
+	ListAliases(ctx context.Context, nodeID string) ([]string, error)
 }

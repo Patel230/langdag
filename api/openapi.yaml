@@ -21,7 +21,12 @@ info:
     ## IDs
 
     All IDs are UUIDs. For convenience, partial ID prefixes are accepted (minimum 4 characters).
-  version: 2.0.0
+
+    ## Aliases
+
+    Nodes can be given human-readable aliases for easy reference. An alias is a unique string
+    that maps to a node ID, useful for bookmarking important nodes or migrating from other systems.
+  version: 3.0.0
   license:
     name: MIT
     url: https://opensource.org/licenses/MIT
@@ -41,8 +46,8 @@ tags:
     description: Prompt endpoints for starting and continuing conversations
   - name: nodes
     description: Node management
-  - name: workflows
-    description: Workflow templates
+  - name: aliases
+    description: Node alias management
 
 paths:
   /health:
@@ -224,71 +229,101 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
-  /workflows:
+  /nodes/{id}/aliases:
     get:
-      tags: [workflows]
-      summary: List workflows
-      description: Returns all workflow templates
-      responses:
-        '200':
-          description: List of workflows
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/Workflow'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-    post:
-      tags: [workflows]
-      summary: Create workflow
-      description: Creates a new workflow template
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreateWorkflowRequest'
-      responses:
-        '201':
-          description: Workflow created
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Workflow'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-
-  /workflows/{id}/run:
-    post:
-      tags: [workflows]
-      summary: Run workflow
-      description: Executes a workflow template
+      tags: [aliases]
+      summary: List aliases for a node
+      description: Returns all aliases assigned to the given node
       parameters:
         - name: id
           in: path
           required: true
-          description: Workflow ID or name
+          description: Node ID (full or prefix)
           schema:
             type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/RunWorkflowRequest'
       responses:
         '200':
-          description: Workflow run result
+          description: List of aliases
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RunWorkflowResponse'
+                type: object
+                properties:
+                  node_id:
+                    type: string
+                  aliases:
+                    type: array
+                    items:
+                      type: string
         '404':
           $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /nodes/{id}/aliases/{alias}:
+    put:
+      tags: [aliases]
+      summary: Create an alias for a node
+      description: Assigns a human-readable alias to a node. The alias must be unique.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Node ID (full or prefix)
+          schema:
+            type: string
+        - name: alias
+          in: path
+          required: true
+          description: The alias string
+          schema:
+            type: string
+      responses:
+        '201':
+          description: Alias created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  alias:
+                    type: string
+                  node_id:
+                    type: string
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Alias already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /aliases/{alias}:
+    delete:
+      tags: [aliases]
+      summary: Delete an alias
+      description: Removes an alias. The node itself is not affected.
+      parameters:
+        - name: alias
+          in: path
+          required: true
+          description: The alias to delete
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Alias deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: deleted
         '401':
           $ref: '#/components/responses/Unauthorized'
 
@@ -359,6 +394,12 @@ components:
         tokens_in:
           type: integer
         tokens_out:
+          type: integer
+        tokens_cache_read:
+          type: integer
+        tokens_cache_creation:
+          type: integer
+        tokens_reasoning:
           type: integer
         latency_ms:
           type: integer
@@ -449,153 +490,3 @@ components:
         event: error
         data: error message
         ```
-
-    Workflow:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        name:
-          type: string
-        version:
-          type: integer
-        description:
-          type: string
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
-      required:
-        - id
-        - name
-        - version
-        - created_at
-        - updated_at
-
-    CreateWorkflowRequest:
-      type: object
-      properties:
-        name:
-          type: string
-          description: Workflow name (must be unique)
-        description:
-          type: string
-        defaults:
-          $ref: '#/components/schemas/WorkflowDefaults'
-        tools:
-          type: array
-          items:
-            $ref: '#/components/schemas/ToolDefinition'
-        nodes:
-          type: array
-          items:
-            $ref: '#/components/schemas/WorkflowNode'
-        edges:
-          type: array
-          items:
-            $ref: '#/components/schemas/WorkflowEdge'
-      required:
-        - name
-        - nodes
-
-    WorkflowDefaults:
-      type: object
-      properties:
-        provider:
-          type: string
-        model:
-          type: string
-        max_tokens:
-          type: integer
-        temperature:
-          type: number
-
-    ToolDefinition:
-      type: object
-      properties:
-        name:
-          type: string
-        description:
-          type: string
-        input_schema:
-          type: object
-      required:
-        - name
-        - description
-        - input_schema
-
-    WorkflowNode:
-      type: object
-      properties:
-        id:
-          type: string
-          description: Node ID (unique within workflow)
-        type:
-          type: string
-          enum: [llm, tool, branch, merge, input, output]
-        content:
-          type: object
-        model:
-          type: string
-        system:
-          type: string
-        prompt:
-          type: string
-        tools:
-          type: array
-          items:
-            type: string
-        handler:
-          type: string
-        condition:
-          type: string
-      required:
-        - id
-        - type
-
-    WorkflowEdge:
-      type: object
-      properties:
-        from:
-          type: string
-          description: Source node ID
-        to:
-          type: string
-          description: Target node ID
-        condition:
-          type: string
-        transform:
-          type: string
-      required:
-        - from
-        - to
-
-    RunWorkflowRequest:
-      type: object
-      properties:
-        input:
-          type: object
-          additionalProperties: true
-          description: Input data for the workflow
-        stream:
-          type: boolean
-          default: false
-          description: Enable SSE streaming
-
-    RunWorkflowResponse:
-      type: object
-      properties:
-        dag_id:
-          type: string
-          format: uuid
-          description: ID of the created root node
-        status:
-          type: string
-          enum: [pending, running, completed, failed]
-        output:
-          type: object
-          additionalProperties: true
-          description: Workflow output (if completed)

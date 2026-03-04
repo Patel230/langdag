@@ -126,24 +126,18 @@ Extend content blocks to support images and documents for multi-modal providers.
 
 ---
 
-## LangGraph Feature Gap (Reference — Not Part of This Plan)
+## LangGraph Feature Comparison
 
-Features LangGraph has that langdag currently lacks, prioritized for future planning:
+langdag's identity is a **conversation tree store** — it persists multi-turn LLM conversations as trees where branching means exploring alternative paths from earlier nodes. The "DAG" in langdag refers to the conversation tree structure, not a workflow execution engine. Modern LLMs handle routing natively via tool calls, so declarative workflow orchestration fights against how models naturally work.
 
-### Critical
-- **Conditional edges / dynamic routing**: Branch node type exists but condition evaluation is unimplemented in the executor (returns nil)
-- **Parallel node execution**: Executor runs nodes sequentially; independent branches could run concurrently with goroutines
-- **Error handling / retries**: Any node failure fails the entire workflow; no retry policies
-- **Typed state with reducers**: State is `map[string]json.RawMessage`; no typed schema or merge strategies
-
-### Important
-- **Checkpointing / durable execution**: Nodes saved to SQLite but intermediate workflow state not checkpointed; can't resume from failure
-- **Human-in-the-loop**: No `interrupt`/`resume` mechanism for pausing workflows
-- **Subgraphs / composition**: Workflows are flat; can't nest workflows as nodes
-- **Cycles / iterative loops**: Explicitly forbidden by validator (DAG-only by design — may be intentional)
-
-### Valuable
-- **Multiple streaming modes**: Only token deltas; no state-update or debug streaming
-- **Observability / tracing**: Basic metrics in SQLite; no OpenTelemetry integration
-- **Node caching**: No cache layer for identical LLM inputs
-- **Memory store**: No cross-workflow persistent storage with semantic search
+| LangGraph Feature | langdag stance | Rationale |
+|---|---|---|
+| Conditional edges / routing | Not needed | Models route themselves via tool calls; declarative routing is opinionated and fights natural LLM behavior |
+| Parallel node execution | Not needed | No workflow executor; conversation turns are inherently sequential |
+| Typed state with reducers | Not needed | The conversation tree *is* the state |
+| Cycles / loops | Not needed | Conversations are trees by design (DAG-only is intentional) |
+| Subgraphs / composition | Not needed | No workflow nesting needed for conversation trees |
+| Human-in-the-loop | Already supported | Conversation trees are inherently human-in-the-loop — every branch point is a human decision |
+| Checkpointing | Already supported | Every node is persisted to SQLite immediately |
+| Error handling / retries | **To implement** | LLM API calls need retry logic for transient failures |
+| Node aliases | **To implement** | Needed for migration from LangGraph and general node naming |

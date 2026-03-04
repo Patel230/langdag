@@ -15,8 +15,6 @@ export type {
   // Client configuration
   LangDAGClientOptions,
   PromptOptions,
-  CreateWorkflowOptions,
-  RunWorkflowOptions,
 
   // Core models
   NodeData,
@@ -28,17 +26,6 @@ export type {
   SSEDeltaEvent,
   SSEDoneEvent,
   SSEErrorEvent,
-
-  // Workflow types
-  Workflow,
-  WorkflowDefaults,
-  ToolDefinition,
-  WorkflowNode,
-  WorkflowNodeType,
-  WorkflowEdge,
-  RunWorkflowRequest,
-  RunWorkflowResponse,
-  RunStatus,
 
   // Response types
   DeleteResponse,

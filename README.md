@@ -26,7 +26,7 @@
 
 ## Why LangDAG?
 
-LangDAG is a **high-performance Go tool** that models LLM conversations and workflows as directed acyclic graphs. Whether you're building chatbots, AI agents, or complex multi-step pipelines—LangDAG provides a unified, powerful abstraction.
+LangDAG is a **high-performance Go tool** that persists LLM conversations as directed acyclic graphs. Branch from any point, explore alternative paths, and maintain full conversation history.
 
 ```
 ┌─────────┐     ┌─────────┐     ┌─────────┐     ┌─────────┐
@@ -45,12 +45,12 @@ LangDAG is a **high-performance Go tool** that models LLM conversations and work
 
 | Feature | Description |
 |---------|-------------|
-| 🔀 **Two Modes** | **Workflow** (YAML pipelines) + **Conversation** (dynamic chat) — same engine |
 | ⚡ **Performance** | Pure Go, ~1ms overhead, single static binary, zero runtime deps |
-| 🌊 **Native Streaming** | SSE + WebSocket support with tool call interruption |
-| 🔧 **Tool Integration** | Auto, Interrupt, or WebSocket execution modes |
+| 🌊 **Native Streaming** | SSE streaming with real-time token delivery |
 | 🌳 **Conversation Forking** | Branch from any node, explore alternative paths |
-| 💾 **Persistent Storage** | SQLite (default) or PostgreSQL, full history replay |
+| 🏷️ **Node Aliases** | Human-readable names for any node |
+| 🔄 **Auto Retry** | Exponential backoff for transient LLM failures |
+| 💾 **Persistent Storage** | SQLite with WAL mode, full history replay |
 
 ---
 
@@ -147,7 +147,9 @@ langdag serve --port 8080
 - `GET /nodes/{id}` — Get a single node
 - `GET /nodes/{id}/tree` — Get full tree from node
 - `DELETE /nodes/{id}` — Delete node and subtree
-- `POST /workflows/{id}/run` — Execute a workflow
+- `PUT /nodes/{id}/aliases/{alias}` — Create node alias
+- `GET /nodes/{id}/aliases` — List node aliases
+- `DELETE /aliases/{alias}` — Delete alias
 
 See the [OpenAPI specification](api/openapi.yaml) for full API documentation.
 
@@ -229,71 +231,23 @@ See the [SDK source code](sdks/) and [example projects](examples/) for more deta
 
 ---
 
-## Workflows
-
-For pre-defined pipelines, LangDAG supports YAML workflow definitions:
-
-```yaml
-# research.yaml
-name: research_agent
-description: Research a topic
-
-defaults:
-  model: claude-sonnet-4-20250514
-  max_tokens: 4096
-
-nodes:
-  - id: input
-    type: input
-  - id: researcher
-    type: llm
-    system: "You are a research assistant."
-    prompt: "Research this topic: {{input}}"
-  - id: output
-    type: output
-
-edges:
-  - from: input
-    to: researcher
-  - from: researcher
-    to: output
-```
-
-```bash
-# Create and run workflows
-langdag workflow create research.yaml
-langdag workflow run research --input '{"query": "quantum computing"}'
-
-# Workflow management
-langdag workflow list               # List workflows
-langdag workflow run <name> --stream # With streaming
-langdag workflow validate <file>    # Validate YAML
-```
-
-Workflows create node trees that can be continued interactively using `langdag prompt`.
-
----
-
 ## Architecture
 
 ```
 ┌──────────────────────────────────────────────────────────┐
 │                      CLI / API                           │
 ├──────────────────────────────────────────────────────────┤
-│                    DAG Executor                          │
-│   ┌───────────┐   ┌───────────┐   ┌───────────┐         │
-│   │  Parser   │   │ Scheduler │   │  Runner   │         │
-│   └───────────┘   └───────────┘   └───────────┘         │
+│                 Conversation Manager                     │
 ├──────────────────────────────────────────────────────────┤
 │                   Provider Layer                         │
 │   ┌───────────┐   ┌───────────┐   ┌───────────┐         │
-│   │ Anthropic │   │  OpenAI   │   │  Ollama   │         │
+│   │ Anthropic │   │  OpenAI   │   │  Gemini   │         │
 │   └───────────┘   └───────────┘   └───────────┘         │
 ├──────────────────────────────────────────────────────────┤
 │                   Storage Layer                          │
-│   ┌───────────┐   ┌───────────┐   ┌───────────┐         │
-│   │  SQLite   │   │ PostgreSQL│   │   Redis   │         │
-│   └───────────┘   └───────────┘   └───────────┘         │
+│   ┌───────────┐                                          │
+│   │  SQLite   │                                          │
+│   └───────────┘                                          │
 └──────────────────────────────────────────────────────────┘
 ```
 
@@ -309,15 +263,14 @@ Workflows create node trees that can be continued interactively using `langdag p
 
 ## Roadmap
 
-- [x] SQLite storage
-- [x] Anthropic provider with streaming
+- [x] SQLite storage with WAL mode
+- [x] Anthropic, OpenAI, Gemini providers with streaming
 - [x] Node-centric API (prompt, branch, tree)
-- [x] Workflow mode (YAML, validation, execution)
 - [x] Tree visualization
 - [x] REST API with SSE streaming
 - [x] Python, Go, TypeScript SDKs
-- [ ] OpenAI & Ollama providers
-- [ ] PostgreSQL storage
+- [x] Node aliases
+- [x] Automatic retry with exponential backoff
 - [ ] Web UI
 
 ---
@@ -326,7 +279,7 @@ Workflows create node trees that can be continued interactively using `langdag p
 
 | | LangDAG | LangGraph | Langfuse |
 |---|---------|-----------|----------|
-| **Focus** | DAG orchestration | State machines | Observability |
+| **Focus** | Conversation tree store | State machine orchestration | Observability |
 | **Language** | Go | Python | TypeScript |
 | **Performance** | ~1ms overhead | Higher latency | N/A |
 | **Conversation model** | Native DAG | Manual | Trace-based |

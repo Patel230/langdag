@@ -190,6 +190,27 @@ func (c *Client) DeleteNode(ctx context.Context, id string) error {
 	return c.doRequest(ctx, http.MethodDelete, fmt.Sprintf("/nodes/%s", id), nil, nil)
 }
 
+// CreateAlias creates a human-readable alias for a node.
+func (c *Client) CreateAlias(ctx context.Context, nodeID, alias string) error {
+	return c.doRequest(ctx, http.MethodPut, fmt.Sprintf("/nodes/%s/aliases/%s", nodeID, alias), nil, nil)
+}
+
+// DeleteAlias removes an alias.
+func (c *Client) DeleteAlias(ctx context.Context, alias string) error {
+	return c.doRequest(ctx, http.MethodDelete, fmt.Sprintf("/aliases/%s", alias), nil, nil)
+}
+
+// ListAliases returns all aliases for a node.
+func (c *Client) ListAliases(ctx context.Context, nodeID string) ([]string, error) {
+	var resp struct {
+		Aliases []string `json:"aliases"`
+	}
+	if err := c.doRequest(ctx, http.MethodGet, fmt.Sprintf("/nodes/%s/aliases", nodeID), nil, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Aliases, nil
+}
+
 // doRequest performs an HTTP request and decodes the JSON response.
 func (c *Client) doRequest(ctx context.Context, method, path string, body, result interface{}) error {
 	var bodyReader io.Reader

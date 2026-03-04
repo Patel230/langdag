@@ -17,14 +17,8 @@ from .exceptions import (
 from .models import (
     Node,
     PromptResponse,
-    RunWorkflowResponse,
     SSEEvent,
     SSEEventType,
-    ToolDefinition,
-    Workflow,
-    WorkflowDefaults,
-    WorkflowEdge,
-    WorkflowNode,
 )
 
 
@@ -299,86 +293,20 @@ class AsyncLangDAGClient:
             data = await self._request("POST", f"/nodes/{node_id}/prompt", body)
             return PromptResponse.from_dict(data)
 
-    # --- Workflow Methods ---
+    # --- Alias Methods ---
 
-    async def list_workflows(self) -> list[Workflow]:
-        """List all workflow templates.
+    async def create_alias(self, node_id: str, alias: str) -> dict[str, str]:
+        """Create a human-readable alias for a node."""
+        return await self._request("PUT", f"/nodes/{node_id}/aliases/{alias}")
 
-        Returns:
-            List of Workflow objects.
-        """
-        data = await self._request("GET", "/workflows")
-        return [Workflow.from_dict(w) for w in data]
+    async def delete_alias(self, alias: str) -> dict[str, str]:
+        """Delete an alias."""
+        return await self._request("DELETE", f"/aliases/{alias}")
 
-    async def create_workflow(
-        self,
-        name: str,
-        nodes: list[WorkflowNode],
-        description: str | None = None,
-        defaults: WorkflowDefaults | None = None,
-        tools: list[ToolDefinition] | None = None,
-        edges: list[WorkflowEdge] | None = None,
-    ) -> Workflow:
-        """Create a new workflow template.
-
-        Args:
-            name: Workflow name (must be unique).
-            nodes: List of workflow nodes.
-            description: Optional description.
-            defaults: Optional default settings.
-            tools: Optional list of tool definitions.
-            edges: Optional list of edges connecting nodes.
-
-        Returns:
-            Created Workflow object.
-
-        Raises:
-            BadRequestError: If the request is invalid.
-        """
-        body: dict[str, Any] = {
-            "name": name,
-            "nodes": [n.to_dict() for n in nodes],
-        }
-        if description is not None:
-            body["description"] = description
-        if defaults is not None:
-            body["defaults"] = defaults.to_dict()
-        if tools is not None:
-            body["tools"] = [t.to_dict() for t in tools]
-        if edges is not None:
-            body["edges"] = [e.to_dict() for e in edges]
-
-        data = await self._request("POST", "/workflows", body)
-        return Workflow.from_dict(data)
-
-    async def run_workflow(
-        self,
-        workflow_id: str,
-        input: dict[str, Any] | None = None,
-        stream: bool = False,
-    ) -> RunWorkflowResponse | AsyncIterator[SSEEvent]:
-        """Run a workflow.
-
-        Args:
-            workflow_id: Workflow ID or name.
-            input: Optional input data for the workflow.
-            stream: If True, return an async iterator of SSE events.
-
-        Returns:
-            RunWorkflowResponse if stream=False, otherwise an AsyncIterator of SSEEvent.
-
-        Raises:
-            NotFoundError: If the workflow is not found.
-        """
-        body: dict[str, Any] = {"stream": stream}
-        if input is not None:
-            body["input"] = input
-
-        if stream:
-            return self._stream_request("POST", f"/workflows/{workflow_id}/run", body)
-        else:
-            data = await self._request("POST", f"/workflows/{workflow_id}/run", body)
-            return RunWorkflowResponse.from_dict(data)
+    async def list_aliases(self, node_id: str) -> list[str]:
+        """List all aliases for a node."""
+        data = await self._request("GET", f"/nodes/{node_id}/aliases")
+        return data.get("aliases", [])
 
 
 async def _parse_sse_stream_async(

@@ -12,7 +12,6 @@ import (
 	"github.com/langdag/langdag/internal/conversation"
 	mockprovider "github.com/langdag/langdag/internal/provider/mock"
 	"github.com/langdag/langdag/internal/storage/sqlite"
-	"github.com/langdag/langdag/internal/workflow"
 )
 
 // testServer creates a Server with a temp SQLite DB and mock provider for testing.
@@ -42,13 +41,11 @@ func testServer(t *testing.T, apiKey string) (*Server, *http.ServeMux) {
 	})
 
 	convMgr := conversation.NewManager(store, prov)
-	workflowMgr := workflow.NewManager(store)
 
 	s := &Server{
-		store:       store,
-		convMgr:     convMgr,
-		workflowMgr: workflowMgr,
-		apiKey:      apiKey,
+		store:   store,
+		convMgr: convMgr,
+		apiKey:  apiKey,
 	}
 
 	mux := http.NewServeMux()
