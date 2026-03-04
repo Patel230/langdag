@@ -304,6 +304,47 @@ data: [DONE]
 	}
 }
 
+func TestAzureProviderName(t *testing.T) {
+	p := NewAzure("test-key", "https://myresource.openai.azure.com", "")
+	if p.Name() != "openai-azure" {
+		t.Errorf("expected name 'openai-azure', got '%s'", p.Name())
+	}
+}
+
+func TestAzureProviderModels(t *testing.T) {
+	p := NewAzure("test-key", "https://myresource.openai.azure.com", "")
+	models := p.Models()
+	if len(models) == 0 {
+		t.Fatal("expected at least one model")
+	}
+	for _, m := range models {
+		if m.ID == "" || m.Name == "" {
+			t.Errorf("model missing required fields: %+v", m)
+		}
+	}
+}
+
+func TestAzureDefaultAPIVersion(t *testing.T) {
+	p := NewAzure("test-key", "https://myresource.openai.azure.com", "")
+	if p.apiVersion == "" {
+		t.Error("expected default API version to be set")
+	}
+}
+
+func TestAzureCustomAPIVersion(t *testing.T) {
+	p := NewAzure("test-key", "https://myresource.openai.azure.com", "2024-06-01")
+	if p.apiVersion != "2024-06-01" {
+		t.Errorf("expected API version '2024-06-01', got '%s'", p.apiVersion)
+	}
+}
+
+func TestAzureEndpointTrimming(t *testing.T) {
+	p := NewAzure("test-key", "https://myresource.openai.azure.com/", "")
+	if strings.HasSuffix(p.endpoint, "/") {
+		t.Error("expected trailing slash to be trimmed from endpoint")
+	}
+}
+
 func TestConvertTools(t *testing.T) {
 	tools := []types.ToolDefinition{
 		{
