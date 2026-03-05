@@ -220,8 +220,7 @@ class TestAsyncStreaming:
         )
         async with AsyncLangDAGClient() as client:
             events = []
-            stream = await client.prompt("Hello", stream=True)
-            async for event in stream:
+            async for event in client.prompt("Hello", stream=True):
                 events.append(event)
         assert len(events) == 4
         assert events[0].event == SSEEventType.START
@@ -243,8 +242,7 @@ class TestAsyncStreaming:
         )
         async with AsyncLangDAGClient() as client:
             events = []
-            stream = await client.prompt_from("n-1", "More please", stream=True)
-            async for event in stream:
+            async for event in client.prompt_from("n-1", "More please", stream=True):
                 events.append(event)
         assert len(events) == 3
         assert events[2].node_id == "n-2"
@@ -261,8 +259,7 @@ class TestAsyncStreaming:
         )
         async with AsyncLangDAGClient() as client:
             events = []
-            stream = await client.prompt("Hello", stream=True)
-            async for event in stream:
+            async for event in client.prompt("Hello", stream=True):
                 events.append(event)
         assert len(events) == 2
         assert events[1].event == SSEEventType.ERROR
@@ -274,8 +271,7 @@ class TestAsyncStreaming:
         )
         async with AsyncLangDAGClient() as client:
             with pytest.raises(APIError) as exc_info:
-                stream = await client.prompt("Hello", stream=True)
-                async for _ in stream:
+                async for _ in client.prompt("Hello", stream=True):
                     pass
             assert exc_info.value.status_code == 500
 
@@ -294,8 +290,7 @@ class TestAsyncStreaming:
         )
         async with AsyncLangDAGClient() as client:
             content = ""
-            stream = await client.prompt("Hello", stream=True)
-            async for event in stream:
+            async for event in client.prompt("Hello", stream=True):
                 if event.content:
                     content += event.content
         assert content == "One two three"
@@ -308,7 +303,6 @@ class TestAsyncStreaming:
         )
         async with AsyncLangDAGClient() as client:
             with pytest.raises(APIError) as exc_info:
-                stream = await client.prompt("Hello", stream=True)
-                async for _ in stream:
+                async for _ in client.prompt("Hello", stream=True):
                     pass
             assert exc_info.value.status_code == 502
