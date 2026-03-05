@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/langdag/langdag/pkg/types"
+	"langdag.com/langdag/types"
 )
 
 func TestConvertMessages_PlainText(t *testing.T) {

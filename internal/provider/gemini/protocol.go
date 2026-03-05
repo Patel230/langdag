@@ -13,7 +13,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/langdag/langdag/pkg/types"
+	"langdag.com/langdag/types"
 )
 
 // --- Request types ---

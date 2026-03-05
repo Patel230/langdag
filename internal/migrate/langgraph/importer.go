@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/langdag/langdag/internal/storage"
-	"github.com/langdag/langdag/pkg/types"
+	"langdag.com/langdag/internal/storage"
+	"langdag.com/langdag/types"
 )
 
 // ImportOptions configures the import behavior.

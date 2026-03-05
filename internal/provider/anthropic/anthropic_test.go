@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/langdag/langdag/pkg/types"
+	"langdag.com/langdag/types"
 )
 
 func TestDirectProviderName(t *testing.T) {

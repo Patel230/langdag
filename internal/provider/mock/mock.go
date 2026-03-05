@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/langdag/langdag/pkg/types"
+	"langdag.com/langdag/types"
 )
 
 // Config holds mock provider configuration.

@@ -3,7 +3,7 @@ package api
 import (
 	"net/http"
 
-	"github.com/langdag/langdag/pkg/types"
+	"langdag.com/langdag/types"
 )
 
 // NodeResponse represents a node in API responses.

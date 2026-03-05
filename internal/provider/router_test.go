@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/langdag/langdag/pkg/types"
+	"langdag.com/langdag/types"
 )
 
 // testProvider is a minimal provider for testing.

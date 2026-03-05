@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/langdag/langdag/pkg/types"
+	"langdag.com/langdag/types"
 )
 
 // AzureProvider implements the provider interface for Azure OpenAI.

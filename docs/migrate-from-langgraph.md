@@ -138,8 +138,8 @@ If you are building a Go application and want to trigger the import from code ra
 import (
     "context"
 
-    lgmigrate "github.com/langdag/langdag/internal/migrate/langgraph"
-    "github.com/langdag/langdag/pkg/langdag"
+    lgmigrate "langdag.com/langdag/internal/migrate/langgraph"
+    "langdag.com/langdag"
 )
 
 client, _ := langdag.New(langdag.Config{StoragePath: "langdag.db", /* ... */})

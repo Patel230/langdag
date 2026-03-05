@@ -9,7 +9,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/langdag/langdag/pkg/types"
+	"langdag.com/langdag/types"
 )
 
 // --- Request types ---

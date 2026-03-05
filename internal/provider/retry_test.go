@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/langdag/langdag/pkg/types"
+	"langdag.com/langdag/types"
 )
 
 // failProvider fails N times then succeeds.

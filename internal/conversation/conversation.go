@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/langdag/langdag/internal/provider"
-	"github.com/langdag/langdag/internal/storage"
-	"github.com/langdag/langdag/pkg/types"
+	"langdag.com/langdag/internal/provider"
+	"langdag.com/langdag/internal/storage"
+	"langdag.com/langdag/types"
 )
 
 // Manager handles conversation operations using the unified node model.

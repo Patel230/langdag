@@ -116,7 +116,8 @@ langdag/
 │   ├── provider/      # LLM provider implementations
 │   ├── storage/       # Data persistence
 │   └── workflow/      # Workflow parsing & validation
-├── pkg/types/         # Public type definitions
+├── types/             # Public type definitions
+├── langdag.go         # Public library (import as langdag.com/langdag)
 ├── docs/              # Documentation
 └── examples/          # Example workflows
 ```

@@ -4,7 +4,7 @@ package storage
 import (
 	"context"
 
-	"github.com/langdag/langdag/pkg/types"
+	"langdag.com/langdag/types"
 )
 
 // Storage defines the interface for persisting nodes.

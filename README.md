@@ -60,13 +60,13 @@ LangDAG is a **high-performance Go tool** that persists LLM conversations as dir
 LangDAG is available as an importable Go package for building AI agent applications with persistent conversation storage.
 
 ```bash
-go get github.com/langdag/langdag/pkg/langdag
+go get langdag.com/langdag
 ```
 
 ### Basic Usage
 
 ```go
-import "github.com/langdag/langdag/pkg/langdag"
+import "langdag.com/langdag"
 
 client, err := langdag.New(langdag.Config{
     StoragePath: "./agent.db",

@@ -10,14 +10,14 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/langdag/langdag/internal/conversation"
-	internalprovider "github.com/langdag/langdag/internal/provider"
-	anthropicprovider "github.com/langdag/langdag/internal/provider/anthropic"
-	geminiprovider "github.com/langdag/langdag/internal/provider/gemini"
-	openaiprovider "github.com/langdag/langdag/internal/provider/openai"
-	internalstorage "github.com/langdag/langdag/internal/storage"
-	"github.com/langdag/langdag/internal/storage/sqlite"
-	"github.com/langdag/langdag/pkg/types"
+	"langdag.com/langdag/internal/conversation"
+	internalprovider "langdag.com/langdag/internal/provider"
+	anthropicprovider "langdag.com/langdag/internal/provider/anthropic"
+	geminiprovider "langdag.com/langdag/internal/provider/gemini"
+	openaiprovider "langdag.com/langdag/internal/provider/openai"
+	internalstorage "langdag.com/langdag/internal/storage"
+	"langdag.com/langdag/internal/storage/sqlite"
+	"langdag.com/langdag/types"
 )
 
 // Storage is the interface for persisting conversation nodes.

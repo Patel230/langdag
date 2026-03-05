@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/langdag/langdag/pkg/types"
+	"langdag.com/langdag/types"
 )
 
 // RetryConfig configures retry behavior for provider calls.

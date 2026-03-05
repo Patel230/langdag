@@ -6,7 +6,7 @@ import (
 	"log"
 	"math/rand"
 
-	"github.com/langdag/langdag/pkg/types"
+	"langdag.com/langdag/types"
 )
 
 // RouteEntry associates a provider with a routing weight.

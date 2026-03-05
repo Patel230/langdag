@@ -7,8 +7,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/langdag/langdag/internal/config"
-	"github.com/langdag/langdag/pkg/langdag"
+	"langdag.com/langdag"
+	"langdag.com/langdag/internal/config"
 	"github.com/spf13/cobra"
 )
 

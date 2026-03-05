@@ -7,7 +7,7 @@ import (
 	"net/http"
 
 	"golang.org/x/oauth2/google"
-	"github.com/langdag/langdag/pkg/types"
+	"langdag.com/langdag/types"
 )
 
 // VertexProvider implements the provider interface for Gemini via Vertex AI.

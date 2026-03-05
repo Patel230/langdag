@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/langdag/langdag/pkg/types"
+	"langdag.com/langdag/types"
 )
 
 // configurableProvider allows fine-grained control over failure behavior for integration tests.

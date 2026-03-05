@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/langdag/langdag/pkg/types"
+	"langdag.com/langdag/types"
 	"github.com/olekukonko/tablewriter"
 	"github.com/spf13/cobra"
 )

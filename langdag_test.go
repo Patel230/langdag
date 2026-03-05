@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/langdag/langdag/internal/provider/mock"
-	"github.com/langdag/langdag/internal/storage/sqlite"
-	"github.com/langdag/langdag/pkg/langdag"
+	"langdag.com/langdag"
+	"langdag.com/langdag/internal/provider/mock"
+	"langdag.com/langdag/internal/storage/sqlite"
 )
 
 // newTestClient creates a Client backed by a temp SQLite DB and a mock provider.

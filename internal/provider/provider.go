@@ -4,7 +4,7 @@ package provider
 import (
 	"context"
 
-	"github.com/langdag/langdag/pkg/types"
+	"langdag.com/langdag/types"
 )
 
 // Provider defines the interface for LLM providers.

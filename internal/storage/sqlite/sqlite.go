@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/langdag/langdag/pkg/types"
+	"langdag.com/langdag/types"
 	_ "modernc.org/sqlite"
 )
 
