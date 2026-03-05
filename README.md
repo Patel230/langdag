@@ -348,6 +348,7 @@ See the [SDK source code](sdks/) and [example projects](examples/) for more deta
 - **[Design Document](docs/DESIGN.md)** — Deep dive into architecture
 - **[API Reference](https://aduermael.github.io/langdag/api)** — REST & WebSocket APIs
 - **[Examples](examples/)** — Sample workflows
+- **[Migrate from LangGraph](docs/migrate-from-langgraph.md)** — Import your existing LangGraph conversations into LangDAG
 
 ---
 
