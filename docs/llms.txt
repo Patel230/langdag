@@ -1,43 +1,49 @@
 # LangDAG
 
-> LLM Conversations as Directed Acyclic Graphs
+> LLM conversation management as Directed Acyclic Graphs -- a Go alternative to LangGraph
 
-LangDAG is a high-performance Go tool for orchestrating LLM interactions. Everything is a node — a root node defines a conversation tree, and prompting from any node extends or branches the tree.
+LangDAG is a high-performance Go library and CLI for managing LLM conversations as trees of nodes. Each message (user, assistant, tool call, tool result) is a node. Prompting from any node creates a child, enabling natural branching, forking, and exploration of alternative conversation paths. It is designed as a lightweight, performant alternative to Python-based frameworks like LangGraph (LangChain) and LlamaIndex.
 
-## Key Features
+## Why LangDAG
 
-- Node-centric API: one concept (nodes), one verb (prompt)
-- Native streaming via SSE
-- Branch from any node to explore alternative paths
-- Persistent storage: SQLite (default)
-- ~1ms overhead, single static binary, zero runtime dependencies
+- **Go performance**: Pure Go, ~1ms overhead, single static binary, zero runtime dependencies
+- **DAG-native**: Every conversation is a tree; branch from any node to explore alternatives
+- **Multi-provider**: Anthropic, OpenAI, Gemini (plus Azure OpenAI, Google Vertex AI, AWS Bedrock)
+- **Tool use**: First-class support for tool definitions and tool_use/tool_result flows
+- **SQLite storage**: Persistent conversation history with full replay, zero setup
+- **Simple API**: One concept (nodes), one verb (prompt)
+- **Migration tooling**: Import existing LangGraph conversations (JSON export or direct SQLite)
 
-## SDKs
+## Go Library
 
-- Python: `pip install langdag`
-- Go: `go get langdag.com/langdag-go`
-- TypeScript: `npm install langdag`
-
-## Quick Start
-
-```bash
-# Run the server
-git clone https://github.com/aduermael/langdag && cd langdag
-go run ./cmd/langdag serve
-
-# Or install directly
-go install github.com/aduermael/langdag/cmd/langdag@latest
 ```
+go get langdag.com/langdag
+```
+
+Key API:
+- `langdag.New(Config{}) (*Client, error)` -- create client
+- `client.Prompt(ctx, message, ...opts) (*PromptResult, error)` -- new conversation
+- `client.PromptFrom(ctx, nodeID, message, ...opts) (*PromptResult, error)` -- continue/branch
+- `client.ListConversations(ctx)` / `client.GetNode(ctx, id)` / `client.GetSubtree(ctx, id)`
+- `client.GetAncestors(ctx, id)` / `client.DeleteNode(ctx, id)`
+- Options: `WithModel()`, `WithSystemPrompt()`, `WithMaxTokens()`, `WithTools()`
+- Streaming: `result.Stream` is a `<-chan StreamChunk`; drain to receive content tokens
+
+## SDKs (REST API clients)
+
+- Python: `pip install langdag` -- sync and async clients
+- TypeScript: `npm install langdag`
 
 ## CLI
 
-```bash
+```
 langdag prompt "What is LangDAG?"           # new conversation
 langdag prompt <node-id> "Tell me more"     # continue from node
 langdag prompt                              # interactive mode
 langdag ls                                  # list root nodes
 langdag show <id>                           # show node tree
 langdag rm <id>                             # delete node + subtree
+langdag import langgraph --file export.json # import from LangGraph
 ```
 
 ## REST API
@@ -52,8 +58,16 @@ DELETE /nodes/{id}              Delete node and subtree
 GET    /health                  Health check
 ```
 
+## LangGraph Migration
+
+LangDAG includes tooling to import conversations from LangGraph:
+- Go package: `langdag.com/langdag/internal/migrate/langgraph`
+- CLI: `langdag import langgraph --file export.json` or `--sqlite /path/to/langgraph.db`
+- Python export tool: `tools/langgraph-export/` (supports InMemorySaver, SqliteSaver, PostgresSaver)
+
 ## Links
 
-- Website: https://langdag.com
+- Docs: https://langdag.com
 - GitHub: https://github.com/aduermael/langdag
+- Detailed reference: https://langdag.com/llms-full.txt
 - License: MIT

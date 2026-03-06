@@ -3,8 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>LangDAG - LLM Conversations as Directed Acyclic Graphs</title>
-  <meta name="description" content="High-performance Go tool for managing LLM conversations and workflows as DAGs">
+  <title>LangDAG — Go Alternative to LangGraph for LLM Conversation DAGs | AI Agent Framework</title>
+  <meta name="description" content="LangDAG is a high-performance Go library and CLI for managing LLM conversations as directed acyclic graphs (DAGs). A fast, lightweight alternative to LangGraph, LangChain, and LlamaIndex for AI agent orchestration, branching conversations, and workflow management.">
+  <meta name="keywords" content="LangDAG, LangGraph alternative, LangGraph Go, LangChain alternative, LlamaIndex alternative, Langfuse, LLM orchestration, AI agent framework, Go LLM library, directed acyclic graph, DAG conversations, LLM workflow, AI conversation management, Go AI tools, branching conversations, multi-provider LLM, Anthropic Go, OpenAI Go, Gemini Go, LLM CLI tool, conversation tree, AI orchestration framework, Go developer tools, LLM SDK, agentic workflows">
+  <meta name="author" content="Adrien Duermael">
+  <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1">
   <link rel="canonical" href="https://langdag.com/">
   <link rel="icon" type="image/svg+xml" href="assets/langdag-logo.svg">
 
@@ -13,17 +16,21 @@
   <meta name="go-source" content="langdag.com/langdag https://github.com/aduermael/langdag https://github.com/aduermael/langdag/tree/main{/dir} https://github.com/aduermael/langdag/blob/main{/dir}/{file}#L{line}">
 
   <!-- Open Graph -->
-  <meta property="og:title" content="LangDAG - LLM Conversations as Directed Acyclic Graphs">
-  <meta property="og:description" content="High-performance Go tool for managing LLM conversations and workflows as DAGs">
+  <meta property="og:title" content="LangDAG — Go Alternative to LangGraph for LLM Conversation DAGs">
+  <meta property="og:description" content="High-performance Go library and CLI for managing LLM conversations as DAGs. A fast, lightweight alternative to LangGraph and LangChain for AI agent orchestration and branching workflows.">
   <meta property="og:url" content="https://langdag.com/">
   <meta property="og:type" content="website">
   <meta property="og:image" content="https://langdag.com/assets/langdag-banner.svg">
+  <meta property="og:image:alt" content="LangDAG — LLM Conversations as Directed Acyclic Graphs">
+  <meta property="og:site_name" content="LangDAG">
+  <meta property="og:locale" content="en_US">
 
   <!-- Twitter Card -->
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="LangDAG - LLM Conversations as Directed Acyclic Graphs">
-  <meta name="twitter:description" content="High-performance Go tool for managing LLM conversations and workflows as DAGs">
+  <meta name="twitter:title" content="LangDAG — Go Alternative to LangGraph for LLM Conversation DAGs">
+  <meta name="twitter:description" content="High-performance Go library and CLI for managing LLM conversations as DAGs. A fast, lightweight alternative to LangGraph and LangChain for AI agent orchestration and branching workflows.">
   <meta name="twitter:image" content="https://langdag.com/assets/langdag-banner.svg">
+  <meta name="twitter:image:alt" content="LangDAG — LLM Conversations as Directed Acyclic Graphs">
 
   <!-- Structured Data -->
   <script type="application/ld+json">
@@ -31,18 +38,29 @@
     "@context": "https://schema.org",
     "@type": "SoftwareApplication",
     "name": "LangDAG",
-    "description": "High-performance Go tool for managing LLM conversations and workflows as directed acyclic graphs",
+    "alternateName": ["langdag", "Lang DAG"],
+    "headline": "LangDAG — Go Alternative to LangGraph for LLM Conversation DAGs",
+    "alternativeHeadline": "High-Performance Go Library for Managing LLM Conversations as Directed Acyclic Graphs",
+    "description": "LangDAG is a high-performance Go library and CLI for managing LLM conversations as directed acyclic graphs. A fast, lightweight alternative to LangGraph, LangChain, and LlamaIndex for AI agent orchestration, branching conversations, and workflow management. Supports Anthropic, OpenAI, and Gemini.",
     "url": "https://langdag.com",
     "applicationCategory": "DeveloperApplication",
+    "applicationSubCategory": "AI/ML Developer Tools",
     "operatingSystem": "Linux, macOS, Windows",
     "programmingLanguage": ["Go", "Python", "TypeScript"],
     "license": "https://opensource.org/licenses/MIT",
     "codeRepository": "https://github.com/aduermael/langdag",
+    "keywords": ["LLM orchestration", "AI agent framework", "directed acyclic graph", "LangGraph alternative", "Go LLM library", "conversation management", "branching conversations", "multi-provider LLM", "Anthropic", "OpenAI", "Gemini"],
+    "author": {
+      "@type": "Person",
+      "name": "Adrien Duermael",
+      "url": "https://github.com/aduermael"
+    },
     "offers": {
       "@type": "Offer",
       "price": "0",
       "priceCurrency": "USD"
-    }
+    },
+    "isAccessibleForFree": true
   }
   </script>
 
@@ -573,6 +591,7 @@
           <a href="#features">Features</a>
           <a href="#golib">Go Library</a>
           <a href="#demo">SDKs</a>
+          <a href="#compare">vs LangGraph</a>
           <a href="https://github.com/aduermael/langdag#sdks">Docs</a>
           <a href="https://github.com/aduermael/langdag" class="btn btn-secondary">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
@@ -587,10 +606,10 @@
     <section class="hero">
       <div class="container">
         <div class="hero-badge">
-          <span>v0.2.0</span> — Built with Go for maximum performance
+          <span>v0.2.0</span> — Open-source LLM orchestration framework in Go
         </div>
-        <h1>LLM Conversations<br>as DAGs</h1>
-        <p>A high-performance tool for orchestrating LLM interactions. Model conversations and workflows as directed acyclic graphs.</p>
+        <h1>LLM Orchestration<br>as DAGs</h1>
+        <p>A high-performance Go library for LLM orchestration and AI agent development. Manage conversation history as directed acyclic graphs with branching, forking, and multi-provider routing.</p>
         <div class="hero-buttons">
           <a href="https://github.com/aduermael/langdag" class="btn btn-primary">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
@@ -719,33 +738,33 @@
     <section class="features" id="features">
       <div class="container">
         <div class="section-header">
-          <h2>Built for Performance</h2>
-          <p>Written in Go with a focus on speed, simplicity, and developer experience</p>
+          <h2>Built for Performance in Go</h2>
+          <p>A lightweight alternative to LangGraph and LangChain, written in Go for speed, simplicity, and developer experience</p>
         </div>
         <div class="features-grid">
           <div class="feature-card">
             <h3>⚡ ~1ms Overhead</h3>
-            <p>Pure Go implementation with minimal latency. Single static binary with zero runtime dependencies.</p>
+            <p>Pure Go implementation with minimal latency. Ships as a single static binary with zero runtime dependencies — no Python, no JVM.</p>
           </div>
           <div class="feature-card">
-            <h3>🌊 Native Streaming</h3>
-            <p>Real-time token streaming via SSE. WebSocket support for bidirectional communication.</p>
+            <h3>🌊 Native LLM Streaming</h3>
+            <p>Real-time token streaming via SSE for AI agent responses. WebSocket support for bidirectional communication with any LLM provider.</p>
           </div>
           <div class="feature-card">
             <h3>🔄 Auto Retry</h3>
-            <p>Automatic exponential backoff for transient LLM failures. Configurable retry limits per provider.</p>
+            <p>Automatic exponential backoff for transient LLM API failures. Configurable retry limits per provider with multi-provider fallback routing.</p>
           </div>
           <div class="feature-card">
-            <h3>🌳 Conversation Forking</h3>
-            <p>Branch from any node in your conversation. Explore alternative paths while preserving history.</p>
+            <h3>🌳 Conversation Branching &amp; Forking</h3>
+            <p>Branch from any node in your conversation history. Explore alternative paths, compare LLM responses, and build complex AI agent workflows — all stored as a DAG.</p>
           </div>
           <div class="feature-card">
             <h3>💾 Persistent Storage</h3>
-            <p>SQLite by default (zero config). Full history replay and conversation tree navigation.</p>
+            <p>SQLite-backed conversation history by default (zero config). Full history replay and conversation tree navigation for debugging AI agents.</p>
           </div>
           <div class="feature-card">
-            <h3>📦 Go Module</h3>
-            <p>Import langdag directly into your Go application. Build AI agents with persistent DAG storage — no separate server required.</p>
+            <h3>📦 Go Module for AI Agents</h3>
+            <p>Import langdag directly into your Go application. Build AI agents and LLM orchestration pipelines with persistent DAG storage — no separate server required.</p>
           </div>
         </div>
       </div>
@@ -756,9 +775,9 @@
       <div class="container">
         <div class="code-container">
           <div>
-            <h2 style="font-size: 2rem; margin-bottom: 16px;">Simple CLI Interface</h2>
+            <h2 style="font-size: 2rem; margin-bottom: 16px;">Simple CLI for LLM Conversations</h2>
             <p style="color: var(--text-secondary); margin-bottom: 24px; font-size: 1.1rem;">
-              Start conversations, branch from any node, and manage your DAGs with intuitive commands.
+              Start LLM conversations, branch from any node in the conversation history, and manage your AI workflow DAGs with intuitive commands.
             </p>
             <a href="https://github.com/aduermael/langdag" class="btn btn-primary">Get Started</a>
           </div>
@@ -791,8 +810,8 @@
     <section class="features" id="demo">
       <div class="container">
         <div class="section-header">
-          <h2>SDK for Every Language</h2>
-          <p>Build AI-powered applications with native SDKs for Python, Go, and TypeScript</p>
+          <h2>LLM Orchestration SDK for Every Language</h2>
+          <p>Build AI agents and LLM-powered applications with native SDKs for Python, Go, and TypeScript</p>
           <div class="lang-toggle" style="margin-top: 24px; display: inline-flex;">
             <button class="lang-btn active" data-lang="python">Python</button>
             <button class="lang-btn" data-lang="go">Go SDK</button>
@@ -1123,8 +1142,8 @@ result2, _ := client.PromptFrom(ctx, result.NodeID, <span class="string">"Tell m
     <section class="install">
       <div class="container">
         <div class="install-box">
-          <h2>Get Started in Seconds</h2>
-          <p>Install the SDK for your language, or build from source</p>
+          <h2>Start Building AI Agents in Seconds</h2>
+          <p>Install the LangDAG SDK for your language and start orchestrating LLM conversations</p>
 
           <div class="lang-toggle" style="margin-bottom: 24px; display: inline-flex;">
             <button class="lang-btn active" data-lang="python">Python</button>
@@ -1172,6 +1191,30 @@ result2, _ := client.PromptFrom(ctx, result.NodeID, <span class="string">"Tell m
             <a href="https://github.com/aduermael/langdag/tree/main/examples" class="btn btn-secondary">
               View Examples
             </a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Migration / Comparison Section -->
+    <section class="features" id="compare">
+      <div class="container">
+        <div class="section-header">
+          <h2>Migrating from LangGraph?</h2>
+          <p>LangDAG is a lightweight Go alternative to LangGraph, LangChain, and other Python-based LLM frameworks</p>
+        </div>
+        <div class="features-grid">
+          <div class="feature-card">
+            <h3>LangDAG vs LangGraph</h3>
+            <p>LangGraph requires a Python runtime and the full LangChain ecosystem. LangDAG is a single Go binary with ~1ms overhead, native DAG-based conversation history, and built-in conversation forking — no Python required.</p>
+          </div>
+          <div class="feature-card">
+            <h3>LangDAG vs LangChain</h3>
+            <p>LangChain provides a broad Python toolkit for LLM applications. LangDAG focuses on conversation orchestration and persistent DAG storage in Go, making it ideal for production AI agents that need performance and a small footprint.</p>
+          </div>
+          <div class="feature-card">
+            <h3>Built-in LangGraph Import</h3>
+            <p>Already using LangGraph? LangDAG includes a migration tool that imports your existing LangGraph conversation history — from JSON exports or directly from LangGraph's SQLite checkpoints. <a href="migrate-from-langgraph/" style="color: var(--accent-cyan);">Migration guide &rarr;</a></p>
           </div>
         </div>
       </div>

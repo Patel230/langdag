@@ -1,57 +1,215 @@
 # LangDAG
 
-> LLM Conversations as Directed Acyclic Graphs
+> LLM conversation management as Directed Acyclic Graphs -- a Go alternative to LangGraph
 
-LangDAG is a high-performance Go tool for orchestrating LLM interactions. It models conversations as trees of nodes — each message is a node, and prompting from any node extends or branches the tree.
+LangDAG is a high-performance Go library and CLI for managing LLM conversations as trees of nodes. Each message (user, assistant, tool call, tool result) is a node in a tree. Prompting from any node creates a child node, enabling natural branching, forking, and exploration of alternative conversation paths.
+
+LangDAG is designed as a lightweight, performant alternative to Python-based LLM orchestration frameworks like LangGraph (LangChain), Langfuse, and LlamaIndex. It is written in pure Go with zero runtime dependencies and compiles to a single static binary.
+
+## Why LangDAG over LangGraph or LlamaIndex
+
+- **Go performance**: ~1ms overhead per operation, single static binary, no Python runtime needed
+- **DAG-native data model**: Every conversation is inherently a tree; branching/forking is a first-class operation, not an afterthought
+- **Multi-provider**: Anthropic, OpenAI, Gemini -- plus Azure OpenAI, Google Vertex AI, AWS Bedrock variants
+- **Tool use support**: First-class support for tool definitions and tool_use/tool_result conversation flows
+- **SQLite storage**: Zero-setup persistent storage with full conversation replay
+- **Simple mental model**: One concept (nodes), one verb (prompt). No graphs, edges, or state machines to configure
+- **Migration path**: Import your existing LangGraph conversations via JSON export or direct SQLite reading
 
 ## Core Concept
 
-Everything is a **node**. There is no separate DAG entity. A root node (parent_id = NULL) defines a conversation tree. Prompting from any node creates a child node, enabling natural branching and exploration.
+Everything is a **node**. There is no separate conversation or DAG entity. A root node (parent_id = NULL) defines a conversation tree. Prompting from any node creates a child node, enabling natural branching and exploration.
 
 ```
-┌─────────┐     ┌─────────┐     ┌─────────┐     ┌─────────┐
-│  User   │────>│   LLM   │────>│  Tool   │────>│   LLM   │
-└─────────┘     └─────────┘     └─────────┘     └─────────┘
-                    │                               │
-                    └──────── conversation ─────────┘
-                                 = node tree
+         [User: "Explain DAGs"]
+                  |
+         [Assistant: "A DAG is..."]
+               /        \
+   [User: "More          [User: "Give me
+    detail"]              an example"]
+       |                      |
+   [Assistant: ...]      [Assistant: ...]
 ```
 
-## Features
+Node types: `user`, `assistant`, `system`, `tool_call`, `tool_result`
 
-- **One concept**: nodes. A root node defines a conversation tree.
-- **One verb**: `Prompt`. Same method on `Client` (new tree) and `Node` (extend tree).
-- **Performance**: Pure Go, ~1ms overhead, single static binary, zero runtime deps
-- **Native Streaming**: SSE support for real-time token streaming
-- **Branching**: Prompt from any node to create alternative paths
-- **Persistent Storage**: SQLite (default), full history replay
+## Go Library (Primary Interface)
 
-## Architecture
+LangDAG is primarily a Go library. Import it directly into your Go application:
 
 ```
-┌──────────────────────────────────────────────────────────┐
-│                      CLI / API                           │
-├──────────────────────────────────────────────────────────┤
-│                   Node Executor                          │
-│   ┌───────────┐   ┌───────────┐   ┌───────────┐         │
-│   │  Parser   │   │ Scheduler │   │  Runner   │         │
-│   └───────────┘   └───────────┘   └───────────┘         │
-├──────────────────────────────────────────────────────────┤
-│                   Provider Layer                         │
-│   ┌───────────┐   ┌───────────┐   ┌───────────┐         │
-│   │ Anthropic │   │  OpenAI   │   │  Ollama   │         │
-│   └───────────┘   └───────────┘   └───────────┘         │
-├──────────────────────────────────────────────────────────┤
-│                   Storage Layer                          │
-│   ┌───────────┐   ┌───────────┐   ┌───────────┐         │
-│   │  SQLite   │   │ PostgreSQL│   │   Redis   │         │
-│   └───────────┘   └───────────┘   └───────────┘         │
-└──────────────────────────────────────────────────────────┘
+go get langdag.com/langdag
+```
+
+### Creating a Client
+
+```go
+import "langdag.com/langdag"
+
+// Create with config (auto-configures SQLite + provider from env/config)
+client, err := langdag.New(langdag.Config{
+    Provider:    "anthropic",              // or "openai", "gemini"
+    StoragePath: "/path/to/langdag.db",    // optional, defaults to ~/.config/langdag/langdag.db
+    APIKeys: map[string]string{
+        "anthropic": "sk-ant-...",
+    },
+})
+defer client.Close()
+
+// Or create with explicit dependencies (useful for testing)
+client := langdag.NewWithDeps(myStorage, myProvider)
+```
+
+### Config Options
+
+```go
+type Config struct {
+    StoragePath       string                // SQLite database path
+    Provider          string                // "anthropic", "openai", "gemini", "anthropic-vertex", "anthropic-bedrock", "openai-azure", "gemini-vertex"
+    APIKeys           map[string]string     // provider name -> API key
+    AnthropicConfig   *AnthropicConfig      // optional base URL override
+    OpenAIConfig      *OpenAIConfig         // optional base URL override
+    GeminiConfig      *GeminiConfig         // optional base URL override
+    AzureOpenAIConfig *AzureOpenAIConfig    // endpoint, API version, API key
+    VertexConfig      *VertexConfig         // project ID, region
+    BedrockConfig     *BedrockConfig        // region
+    Routing           []RoutingEntry        // multi-provider routing with weights
+    FallbackOrder     []string              // provider fallback chain
+    RetryConfig       *RetryConfig          // max retries, base/max delay
+}
+```
+
+### Prompting (New Conversation)
+
+```go
+result, err := client.Prompt(ctx, "What is LangDAG?",
+    langdag.WithModel("claude-sonnet-4-20250514"),
+    langdag.WithSystemPrompt("You are a helpful assistant."),
+    langdag.WithMaxTokens(4096),
+)
+
+// Drain the stream to get content
+for chunk := range result.Stream {
+    if chunk.Error != nil {
+        log.Fatal(chunk.Error)
+    }
+    fmt.Print(chunk.Content)  // incremental text
+    if chunk.Done {
+        fmt.Println("\nNode ID:", chunk.NodeID)
+        fmt.Println("Stop reason:", chunk.StopReason)
+    }
+}
+// After draining: result.NodeID and result.Content are populated
+```
+
+### Continuing / Branching
+
+```go
+// Continue from any existing node
+result2, err := client.PromptFrom(ctx, result.NodeID, "Tell me more",
+    langdag.WithModel("gpt-4o"),  // can switch providers mid-conversation
+)
+
+// Branch: prompt from the same node again to create an alternative path
+alt, err := client.PromptFrom(ctx, result.NodeID, "Explain differently")
+```
+
+### Tool Use
+
+```go
+tools := []types.ToolDefinition{
+    {
+        Name:        "get_weather",
+        Description: "Get current weather for a location",
+        InputSchema: json.RawMessage(`{"type":"object","properties":{"location":{"type":"string"}},"required":["location"]}`),
+    },
+}
+
+result, err := client.Prompt(ctx, "What's the weather in Paris?",
+    langdag.WithTools(tools),
+)
+
+for chunk := range result.Stream {
+    if chunk.ContentBlock != nil && chunk.ContentBlock.Type == "tool_use" {
+        // LLM wants to call a tool
+        fmt.Printf("Tool call: %s(%s)\n", chunk.ContentBlock.Name, chunk.ContentBlock.Input)
+    }
+    if chunk.Done && chunk.StopReason == "tool_use" {
+        // Handle tool calls, then continue conversation with tool results
+    }
+}
+```
+
+### Node Management
+
+```go
+// List all conversation roots
+roots, err := client.ListConversations(ctx)
+
+// Get a specific node (supports ID prefix matching)
+node, err := client.GetNode(ctx, "abc123")
+
+// Get full subtree from a node
+tree, err := client.GetSubtree(ctx, nodeID)
+
+// Get conversation history (ancestors) leading to a node
+ancestors, err := client.GetAncestors(ctx, nodeID)
+
+// Delete a node and all its descendants
+err := client.DeleteNode(ctx, nodeID)
+```
+
+### Key Types
+
+```go
+// PromptResult holds streaming response
+type PromptResult struct {
+    NodeID  string              // set after stream completes
+    Content string              // full text after stream completes
+    Stream  <-chan StreamChunk  // always non-nil; drain to receive content
+}
+
+// StreamChunk is a piece of a streaming response
+type StreamChunk struct {
+    Content      string              // incremental text
+    ContentBlock *types.ContentBlock  // set for content_done events (e.g. tool_use)
+    Done         bool                // stream completed
+    Error        error               // error during streaming
+    NodeID       string              // set when Done=true
+    StopReason   string              // "end_turn", "tool_use", etc.
+}
+
+// Node represents a node in the conversation tree
+type Node struct {
+    ID           string          // UUID
+    ParentID     string          // empty for root nodes
+    RootID       string          // ID of the root node in this tree
+    Sequence     int             // position in the conversation
+    NodeType     NodeType        // "user", "assistant", "system", "tool_call", "tool_result"
+    Content      string          // message content (or JSON for tool calls)
+    Provider     string          // which provider served this (on assistant nodes)
+    Model        string          // model used (on assistant nodes)
+    TokensIn     int             // input token count
+    TokensOut    int             // output token count
+    Title        string          // conversation title (on root nodes only)
+    SystemPrompt string          // system prompt (on root nodes only)
+    CreatedAt    time.Time
+    Metadata     json.RawMessage // extensible metadata (e.g. migration source info)
+}
+```
+
+### Prompt Options
+
+```go
+langdag.WithModel("claude-sonnet-4-20250514")   // set model
+langdag.WithSystemPrompt("You are...")          // set system prompt (new conversations only)
+langdag.WithMaxTokens(4096)                     // set max output tokens
+langdag.WithTools([]types.ToolDefinition{...})  // provide tool definitions
 ```
 
 ## Data Model
 
-Single `nodes` table. Root nodes (parent_id = NULL) carry conversation metadata.
+Single `nodes` table in SQLite. Root nodes (parent_id = NULL) carry conversation metadata (title, system prompt).
 
 ```sql
 CREATE TABLE nodes (
@@ -67,6 +225,7 @@ CREATE TABLE nodes (
     tokens_out INTEGER,
     latency_ms INTEGER,
     status TEXT,
+    metadata TEXT,                      -- JSON, extensible
 
     -- Root node metadata (NULL on non-root nodes)
     title TEXT,
@@ -74,14 +233,11 @@ CREATE TABLE nodes (
 
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-
-CREATE INDEX idx_nodes_parent ON nodes(parent_id);
-CREATE INDEX idx_nodes_root ON nodes(parent_id) WHERE parent_id IS NULL;
 ```
 
 ## REST API
 
-Start the server:
+The CLI can run a REST API server:
 
 ```bash
 langdag serve --port 8080
@@ -97,9 +253,6 @@ GET    /nodes/{id}                 Get a single node
 GET    /nodes/{id}/tree            Get full tree from node
 DELETE /nodes/{id}                 Delete node and subtree
 GET    /health                     Health check
-GET    /workflows                  List workflows
-POST   /workflows                  Create workflow
-POST   /workflows/{id}/run         Run workflow
 ```
 
 ### Prompt Request
@@ -115,18 +268,18 @@ POST   /workflows/{id}/run         Run workflow
 }
 ```
 
-### SSE Event Types
+### SSE Streaming
 
 When `stream: true`, responses are sent as Server-Sent Events:
 
-- `node_info` — Node metadata (node_id, node_type)
-- `delta` — Streaming content token
-- `done` — Stream complete
-- `error` — Error occurred
+- `node_info` -- Node metadata (node_id, node_type)
+- `delta` -- Streaming content token
+- `done` -- Stream complete
+- `error` -- Error occurred
 
-## SDKs
+## Python SDK
 
-### Python
+The Python SDK is a REST API client for the LangDAG server.
 
 ```bash
 pip install langdag
@@ -135,60 +288,37 @@ pip install langdag
 ```python
 from langdag import LangDAGClient
 
+# Synchronous client
 with LangDAGClient() as client:
     # Start a conversation
-    node = client.prompt("What is LangDAG?")
-    print(node.content)
+    response = client.prompt("What is LangDAG?")
+    print(response.content)
 
-    # Continue from any node
-    node2 = node.prompt("Tell me more")
+    # Continue from a node
+    response2 = client.prompt("Tell me more", node_id=response.node_id)
 
-    # Branch from earlier node
-    alt = node.prompt("Different angle")
-
-    # Stream from a node
-    for event in node.prompt_stream("Explain in detail"):
+    # Stream responses
+    for event in client.prompt("Explain in detail", stream=True):
         if event.content:
             print(event.content, end="")
 
-    # List root nodes and explore trees
+    # List conversations and explore trees
     roots = client.list_roots()
-    tree = client.get_tree(node.id)
+    tree = client.get_tree(node_id)
 ```
 
-### Go
+```python
+from langdag import AsyncLangDAGClient
 
-```bash
-go get langdag.com/langdag-go
+# Async client
+async with AsyncLangDAGClient() as client:
+    response = await client.prompt("Hello!")
+    print(response.content)
 ```
 
-```go
-client := langdag.NewClient("http://localhost:8080")
+## TypeScript SDK
 
-// Start a conversation
-node, err := client.Prompt(ctx, "What is LangDAG?",
-    langdag.WithSystem("You are helpful."))
-fmt.Println(node.Content)
-
-// Continue from any node
-node2, err := node.Prompt(ctx, "Tell me more")
-
-// Branch from earlier node
-alt, err := node.Prompt(ctx, "Different angle")
-
-// Stream
-stream, err := client.PromptStream(ctx, "Explain graphs")
-for event := range stream.Events() {
-    fmt.Print(event.Content)
-}
-result, err := stream.Node()
-
-// List root nodes and explore trees
-roots, err := client.ListRoots(ctx)
-tree, err := client.GetTree(ctx, nodeID)
-```
-
-### TypeScript
+The TypeScript SDK is a REST API client for the LangDAG server.
 
 ```bash
 npm install langdag
@@ -203,25 +333,21 @@ const client = new LangDAGClient();
 const node = await client.prompt("What is LangDAG?");
 console.log(node.content);
 
-// Continue from any node
-const node2 = await node.prompt("Tell me more");
-
-// Branch from earlier node
-const alt = await node.prompt("Different angle");
+// Continue from a node
+const node2 = await client.prompt("Tell me more", { nodeId: node.id });
 
 // Stream
-const stream = await client.promptStream("Explain graphs");
-for await (const event of stream.events()) {
-  process.stdout.write(event.content);
+const stream = client.promptStream("Explain graphs");
+for await (const event of stream) {
+    process.stdout.write(event.content);
 }
-const result = await stream.node();
 
-// List root nodes and explore trees
+// List roots and explore trees
 const roots = await client.listRoots();
 const tree = await client.getTree(nodeId);
 ```
 
-## CLI Usage
+## CLI
 
 ```bash
 # Set your API key
@@ -238,51 +364,122 @@ langdag prompt
 langdag prompt <node-id>
 
 # Flags
-langdag prompt -m <model> "message"
+langdag prompt -m claude-sonnet-4-20250514 "message"
 langdag prompt -s "system prompt" "message"
 
 # Node management
 langdag ls                              # List root nodes
 langdag show <id>                       # Show node tree
 langdag rm <id>                         # Delete node + subtree
+
+# Import from LangGraph
+langdag import langgraph --file export.json
+langdag import langgraph --sqlite /path/to/langgraph.db
+langdag import langgraph --file export.json --output langdag.db --dry-run --skip-existing
 ```
 
-## Workflow YAML Format
+## LangGraph Migration
 
-```yaml
-name: research_agent
-description: Research a topic
+LangDAG provides built-in tooling to migrate conversations from LangGraph:
 
-defaults:
-  model: claude-sonnet-4-20250514
-  max_tokens: 4096
+### CLI Import
 
-nodes:
-  - id: input
-    type: input
-  - id: researcher
-    type: llm
-    system: "You are a research assistant."
-    prompt: "Research this topic: {{input}}"
-  - id: output
-    type: output
+```bash
+# Import from LangGraph JSON export
+langdag import langgraph --file export.json
 
-edges:
-  - from: input
-    to: researcher
-  - from: researcher
-    to: output
+# Import directly from LangGraph SQLite database
+langdag import langgraph --sqlite /path/to/langgraph-checkpoints.db
+
+# Options
+langdag import langgraph --file export.json --output langdag.db --dry-run --skip-existing
 ```
 
-## Configuration
+### Python Export Tool
 
-Environment variables (prefixed with `LANGDAG_`):
+A Python tool is included to export from LangGraph to JSON:
 
-- `LANGDAG_PROVIDER` — LLM provider (e.g., `anthropic`, `mock`)
-- `ANTHROPIC_API_KEY` — API key for Anthropic provider
+```bash
+cd tools/langgraph-export
+pip install -e .
+langgraph-export --sqlite /path/to/langgraph.db --output export.json
+```
+
+Supports LangGraph backends: InMemorySaver, SqliteSaver, PostgresSaver.
+
+### Go Import Package
+
+For programmatic use:
+
+```go
+import "langdag.com/langdag/internal/migrate/langgraph"
+
+result, err := langgraph.ImportFromFile(ctx, "export.json", store, langgraph.ImportOptions{
+    SkipExisting: true,
+    DryRun:       false,
+})
+fmt.Printf("Imported %d threads, %d messages\n", result.ThreadsImported, result.MessagesImported)
+```
+
+Imported nodes include metadata with `source: "langgraph"` and `original_thread_id` for traceability.
+
+## Providers
+
+Supported LLM providers:
+
+| Provider | Config Key | Environment Variable |
+|---|---|---|
+| Anthropic | `anthropic` | `ANTHROPIC_API_KEY` |
+| OpenAI | `openai` | `OPENAI_API_KEY` |
+| Gemini | `gemini` | `GEMINI_API_KEY` |
+| Anthropic via Vertex AI | `anthropic-vertex` | (uses Google credentials) |
+| Anthropic via Bedrock | `anthropic-bedrock` | (uses AWS credentials) |
+| OpenAI via Azure | `openai-azure` | (configured via AzureOpenAIConfig) |
+| Gemini via Vertex AI | `gemini-vertex` | (uses Google credentials) |
+
+### Multi-Provider Routing
+
+```go
+client, _ := langdag.New(langdag.Config{
+    Routing: []langdag.RoutingEntry{
+        {Provider: "anthropic", Weight: 70},
+        {Provider: "openai", Weight: 30},
+    },
+    FallbackOrder: []string{"anthropic", "openai", "gemini"},
+    RetryConfig: &langdag.RetryConfig{
+        MaxRetries: 3,
+        BaseDelay:  time.Second,
+        MaxDelay:   30 * time.Second,
+    },
+    APIKeys: map[string]string{
+        "anthropic": "sk-ant-...",
+        "openai":    "sk-...",
+    },
+})
+```
+
+## Architecture
+
+```
+langdag.com/langdag            -- public Go library (root package)
+  langdag.go                   -- Client, Config, Prompt, PromptFrom, etc.
+  types/                       -- Node, Message, ContentBlock, ToolDefinition, StreamEvent
+  internal/provider/           -- Provider interface + Anthropic, OpenAI, Gemini implementations
+  internal/provider/           -- Router (weighted routing) + Retry wrapper
+  internal/storage/            -- Storage interface
+  internal/storage/sqlite/     -- SQLite implementation
+  internal/conversation/       -- Conversation manager (builds messages, calls provider, saves nodes)
+  internal/migrate/langgraph/  -- LangGraph import (JSON + direct SQLite reading)
+  internal/api/                -- REST API server
+  internal/cli/                -- CLI commands
+  cmd/langdag/                 -- CLI entry point
+  sdks/python/                 -- Python SDK (REST client)
+  sdks/typescript/             -- TypeScript SDK (REST client)
+  tools/langgraph-export/      -- Python tool to export from LangGraph
+```
 
 ## Links
 
-- Website: https://langdag.com
+- Docs: https://langdag.com
 - GitHub: https://github.com/aduermael/langdag
 - License: MIT

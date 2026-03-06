@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Migrate from LangGraph to LangDAG — Step-by-Step Guide | LangGraph Alternative</title>
+  <meta name="description" content="Step-by-step guide to migrate your LangGraph conversation history to LangDAG. Import from LangGraph SQLite, PostgreSQL, or JSON exports. Preserves messages, tool calls, timestamps, and metadata.">
+  <meta name="keywords" content="migrate from LangGraph, LangGraph alternative, LangGraph to LangDAG, LangGraph export, LangGraph migration, LangGraph SQLite, LangGraph conversation export, LangChain migration, LLM conversation import">
+  <meta name="author" content="Adrien Duermael">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="https://langdag.com/migrate-from-langgraph/">
+  <link rel="icon" type="image/svg+xml" href="../assets/langdag-logo.svg">
+
+  <!-- Go vanity import -->
+  <meta name="go-import" content="langdag.com/langdag git https://github.com/aduermael/langdag">
+  <meta name="go-source" content="langdag.com/langdag https://github.com/aduermael/langdag https://github.com/aduermael/langdag/tree/main{/dir} https://github.com/aduermael/langdag/blob/main{/dir}/{file}#L{line}">
+
+  <!-- Open Graph -->
+  <meta property="og:title" content="Migrate from LangGraph to LangDAG — Step-by-Step Guide">
+  <meta property="og:description" content="Import your LangGraph conversations into LangDAG. Supports SQLite, PostgreSQL, and JSON exports with full message history preservation.">
+  <meta property="og:url" content="https://langdag.com/migrate-from-langgraph/">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="LangDAG">
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Migrate from LangGraph to LangDAG — Step-by-Step Guide">
+  <meta name="twitter:description" content="Import your LangGraph conversations into LangDAG. Supports SQLite, PostgreSQL, and JSON exports.">
+
+  <!-- Structured Data -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "TechArticle",
+    "headline": "Migrate from LangGraph to LangDAG",
+    "description": "Step-by-step guide to migrate LangGraph conversation history to LangDAG with full message, tool call, and metadata preservation.",
+    "url": "https://langdag.com/migrate-from-langgraph/",
+    "author": {
+      "@type": "Person",
+      "name": "Adrien Duermael",
+      "url": "https://github.com/aduermael"
+    },
+    "about": {
+      "@type": "SoftwareApplication",
+      "name": "LangDAG",
+      "url": "https://langdag.com"
+    },
+    "inLanguage": "en"
+  }
+  </script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-primary: #0a0a0f;
+      --bg-secondary: #12121a;
+      --bg-card: #1a1a24;
+      --text-primary: #f0f0f5;
+      --text-secondary: #a0a0b0;
+      --accent-cyan: #00d4ff;
+      --accent-purple: #a855f7;
+      --gradient: linear-gradient(135deg, #00d4ff 0%, #a855f7 100%);
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      line-height: 1.7;
+    }
+
+    .container { max-width: 800px; margin: 0 auto; padding: 0 24px; }
+
+    header {
+      padding: 20px 0;
+      background: rgba(10, 10, 15, 0.9);
+      backdrop-filter: blur(20px);
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+
+    nav { display: flex; justify-content: space-between; align-items: center; }
+
+    .logo { display: flex; align-items: center; gap: 12px; text-decoration: none; color: var(--text-primary); }
+    .logo svg { width: 32px; height: 32px; }
+    .logo span { font-size: 1.25rem; font-weight: 700; }
+
+    .nav-links { display: flex; gap: 24px; align-items: center; }
+    .nav-links a { color: var(--text-secondary); text-decoration: none; font-size: 0.9rem; transition: color 0.2s; }
+    .nav-links a:hover { color: var(--text-primary); }
+
+    main { padding: 60px 0 80px; }
+
+    h1 { font-size: 2.5rem; font-weight: 700; margin-bottom: 16px; line-height: 1.2; }
+    h2 { font-size: 1.5rem; font-weight: 600; margin-top: 48px; margin-bottom: 16px; color: var(--accent-cyan); }
+    h3 { font-size: 1.15rem; font-weight: 600; margin-top: 32px; margin-bottom: 12px; }
+
+    p { color: var(--text-secondary); margin-bottom: 16px; }
+    p a { color: var(--accent-cyan); text-decoration: none; }
+    p a:hover { text-decoration: underline; }
+
+    .subtitle { font-size: 1.1rem; color: var(--text-secondary); margin-bottom: 40px; }
+
+    pre {
+      background: var(--bg-card);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 12px;
+      padding: 20px;
+      overflow-x: auto;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+      line-height: 1.6;
+      color: var(--accent-cyan);
+      margin-bottom: 16px;
+    }
+
+    code {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85em;
+      background: var(--bg-card);
+      padding: 2px 6px;
+      border-radius: 4px;
+      color: var(--accent-cyan);
+    }
+
+    pre code { background: none; padding: 0; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 24px;
+      font-size: 0.9rem;
+    }
+
+    th, td {
+      text-align: left;
+      padding: 12px 16px;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+
+    th { color: var(--text-primary); font-weight: 600; }
+    td { color: var(--text-secondary); }
+
+    hr { border: none; border-top: 1px solid rgba(255,255,255,0.05); margin: 48px 0; }
+
+    footer {
+      padding: 48px 0;
+      border-top: 1px solid rgba(255,255,255,0.05);
+      text-align: center;
+      color: var(--text-secondary);
+      font-size: 0.9rem;
+    }
+    footer a { color: var(--text-primary); text-decoration: none; }
+
+    @media (max-width: 768px) {
+      h1 { font-size: 1.75rem; }
+      .nav-links { display: none; }
+      pre { font-size: 0.75rem; padding: 16px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="container" style="max-width: 800px;">
+      <nav>
+        <a href="/" class="logo">
+          <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="8" cy="20" r="6" fill="url(#grad1m)"/>
+            <circle cx="20" cy="8" r="6" fill="url(#grad1m)"/>
+            <circle cx="20" cy="32" r="6" fill="url(#grad1m)"/>
+            <circle cx="32" cy="20" r="6" fill="url(#grad2m)"/>
+            <path d="M13 17L17 11" stroke="#00d4ff" stroke-width="2" stroke-linecap="round"/>
+            <path d="M13 23L17 29" stroke="#00d4ff" stroke-width="2" stroke-linecap="round"/>
+            <path d="M23 11L27 17" stroke="#a855f7" stroke-width="2" stroke-linecap="round"/>
+            <path d="M23 29L27 23" stroke="#a855f7" stroke-width="2" stroke-linecap="round"/>
+            <defs>
+              <linearGradient id="grad1m" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stop-color="#00d4ff"/>
+                <stop offset="100%" stop-color="#00b4d8"/>
+              </linearGradient>
+              <linearGradient id="grad2m" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#a855f7"/>
+                <stop offset="100%" stop-color="#7c3aed"/>
+              </linearGradient>
+            </defs>
+          </svg>
+          <span>LangDAG</span>
+        </a>
+        <div class="nav-links">
+          <a href="/">Home</a>
+          <a href="https://github.com/aduermael/langdag">GitHub</a>
+        </div>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <div class="container">
+      <h1>Migrating from LangGraph to LangDAG</h1>
+      <p class="subtitle">LangDAG provides first-class tooling to import your existing LangGraph conversation history into a LangDAG SQLite database. The migration preserves message content, roles, tool calls, tool results, timestamps, and token counts.</p>
+
+      <h2>Overview</h2>
+      <p>The migration is a two-step process:</p>
+      <p>1. <strong>Export</strong> your LangGraph data (SQLite or PostgreSQL) to a JSON file using the <code>langgraph-export</code> Python tool — or skip this step and import directly from a LangGraph SQLite database.</p>
+      <p>2. <strong>Import</strong> into LangDAG using the <code>langdag import langgraph</code> CLI command.</p>
+
+      <hr>
+
+      <h2>Step 1 — Export from LangGraph</h2>
+
+      <h3>Option A: Direct SQLite import (no Python required)</h3>
+      <p>If your LangGraph app uses a SQLite checkpoint database you can import it directly — no export step needed:</p>
+      <pre><code>langdag import langgraph --sqlite /path/to/langgraph.db --output langdag.db</code></pre>
+
+      <h3>Option B: Export via the Python tool</h3>
+      <p>Use the <code>langgraph-export</code> Python package (located in <a href="https://github.com/aduermael/langdag/tree/main/tools/langgraph-export">tools/langgraph-export/</a>) to read from SQLite or PostgreSQL and produce a portable JSON file.</p>
+
+      <p><strong>Install:</strong></p>
+      <pre><code># SQLite support only
+pip install ./tools/langgraph-export
+
+# With PostgreSQL support
+pip install "./tools/langgraph-export[postgres]"</code></pre>
+
+      <p><strong>Export from SQLite:</strong></p>
+      <pre><code>langgraph-export --sqlite /path/to/langgraph.db --output export.json</code></pre>
+
+      <p><strong>Export from PostgreSQL:</strong></p>
+      <pre><code>langgraph-export --postgres "postgresql://user:pass@host/db" --output export.json</code></pre>
+
+      <p><strong>Python API</strong> (e.g. from an InMemorySaver in a script or test):</p>
+      <pre><code>from langgraph.checkpoint.memory import InMemorySaver
+from langgraph_export import LangGraphExporter
+
+saver = InMemorySaver()
+# ... populate saver by running your graphs ...
+
+exporter = LangGraphExporter.from_memory(saver)
+exporter.export().save("export.json")</code></pre>
+
+      <hr>
+
+      <h2>Step 2 — Import into LangDAG</h2>
+
+      <h3>From a JSON export file</h3>
+      <pre><code>langdag import langgraph --file export.json --output langdag.db</code></pre>
+
+      <h3>From a LangGraph SQLite database (direct)</h3>
+      <pre><code>langdag import langgraph --sqlite /path/to/langgraph.db --output langdag.db</code></pre>
+
+      <h3>Useful flags</h3>
+      <table>
+        <tr><th>Flag</th><th>Description</th></tr>
+        <tr><td><code>--output &lt;path&gt;</code></td><td>Target LangDAG SQLite database (created if it does not exist). Defaults to the configured database.</td></tr>
+        <tr><td><code>--dry-run</code></td><td>Preview what would be imported without writing anything.</td></tr>
+        <tr><td><code>--skip-existing</code></td><td>Skip threads already present in the target database (matched by original thread ID).</td></tr>
+      </table>
+
+      <h3>Preview before importing</h3>
+      <pre><code>langdag import langgraph --file export.json --dry-run</code></pre>
+
+      <h3>Incremental / repeated imports</h3>
+      <p>Use <code>--skip-existing</code> to safely re-run an import without creating duplicate threads:</p>
+      <pre><code>langdag import langgraph --file export.json --output langdag.db --skip-existing</code></pre>
+
+      <hr>
+
+      <h2>What gets migrated</h2>
+      <table>
+        <tr><th>LangGraph concept</th><th>LangDAG concept</th></tr>
+        <tr><td>Thread</td><td>Conversation tree (root node + children)</td></tr>
+        <tr><td>HumanMessage</td><td><code>user</code> node</td></tr>
+        <tr><td>AIMessage</td><td><code>assistant</code> node</td></tr>
+        <tr><td>ToolMessage</td><td><code>tool_result</code> node</td></tr>
+        <tr><td>SystemMessage</td><td>System prompt on the root node</td></tr>
+        <tr><td>Tool calls</td><td><code>tool_call</code> child nodes under the assistant node</td></tr>
+        <tr><td>Message timestamps</td><td>Node <code>created_at</code></td></tr>
+        <tr><td>Token counts</td><td><code>tokens_in</code> / <code>tokens_out</code> on assistant nodes</td></tr>
+        <tr><td>Thread metadata</td><td><code>metadata.thread_metadata</code> on the root node</td></tr>
+      </table>
+
+      <p>Each imported node carries a metadata field with:</p>
+      <pre><code>{
+  "source": "langgraph",
+  "original_thread_id": "&lt;thread-uuid&gt;",
+  "original_message_id": "&lt;message-id&gt;"
+}</code></pre>
+      <p>This metadata is used by <code>--skip-existing</code> and is also available for your own queries.</p>
+
+      <hr>
+
+      <h2>Programmatic import (Go)</h2>
+      <p>If you are building a Go application and want to trigger the import from code rather than the CLI, you can use the <code>internal/migrate/langgraph</code> package directly:</p>
+      <pre><code>import (
+    "context"
+
+    lgmigrate "langdag.com/langdag/internal/migrate/langgraph"
+    "langdag.com/langdag"
+)
+
+client, _ := langdag.New(langdag.Config{StoragePath: "langdag.db"})
+defer client.Close()
+
+result, err := lgmigrate.ImportFromFile(
+    context.Background(),
+    "export.json",
+    client.Storage(),
+    lgmigrate.ImportOptions{
+        SkipExisting: true,
+        Progress: func(i, total int, threadID string) {
+            fmt.Printf("[%d/%d] %s\n", i, total, threadID)
+        },
+    },
+)
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Printf("Imported %d threads, %d messages\n",
+    result.ThreadsImported, result.MessagesImported)</code></pre>
+
+      <hr>
+
+      <h2>Troubleshooting</h2>
+
+      <h3>"cannot access file" / "cannot access SQLite database"</h3>
+      <p>The path does not exist or is not readable. Check the path and file permissions.</p>
+
+      <h3>Duplicate threads after re-import</h3>
+      <p>Run with <code>--skip-existing</code>. Threads are matched by their original LangGraph thread ID stored in node metadata.</p>
+
+      <h3>Empty threads not imported</h3>
+      <p>Threads that contain only system messages, or no messages at all, are silently skipped.</p>
+
+      <h3>Tool call content appears as JSON</h3>
+      <p>Tool calls are stored as JSON objects in node content: <code>{"name": "...", "input": {...}}</code>. This is the expected LangDAG representation.</p>
+
+      <hr>
+
+      <h2>Why switch from LangGraph to LangDAG?</h2>
+      <p>LangDAG offers several advantages over LangGraph for teams looking for a more performant, simpler solution:</p>
+      <p><strong>Performance:</strong> LangDAG is written in pure Go with ~1ms overhead per operation. It compiles to a single static binary with zero runtime dependencies — no Python runtime needed.</p>
+      <p><strong>Simplicity:</strong> One concept (nodes), one verb (prompt). No complex state machines, graphs, or edge definitions to configure. Every conversation is naturally a DAG.</p>
+      <p><strong>Multi-provider:</strong> Built-in support for Anthropic, OpenAI, Gemini, plus Azure OpenAI, Google Vertex AI, and AWS Bedrock — with weighted routing and automatic fallback.</p>
+      <p><strong>Conversation forking:</strong> Branch from any node to explore alternative paths. This is a first-class operation, not an afterthought.</p>
+      <p><a href="/">Learn more about LangDAG &rarr;</a></p>
+    </div>
+  </main>
+
+  <footer>
+    <div class="container">
+      <p>LangDAG is open source under the MIT License. <a href="https://github.com/aduermael/langdag">View on GitHub</a></p>
+    </div>
+  </footer>
+</body>
+</html>
