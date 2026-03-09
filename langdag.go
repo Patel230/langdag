@@ -37,8 +37,8 @@ type Config struct {
 	StoragePath string
 
 	// Provider is the default LLM provider to use.
-	// Valid values: "anthropic", "openai", "gemini", "anthropic-vertex",
-	// "anthropic-bedrock", "openai-azure", "gemini-vertex"
+	// Valid values: "anthropic", "openai", "gemini", "grok",
+	// "anthropic-vertex", "anthropic-bedrock", "openai-azure", "gemini-vertex"
 	// Defaults to "anthropic"
 	Provider string
 
@@ -54,6 +54,9 @@ type Config struct {
 
 	// GeminiConfig holds Gemini-specific config.
 	GeminiConfig *GeminiConfig
+
+	// GrokConfig holds Grok (xAI)-specific config.
+	GrokConfig *GrokConfig
 
 	// AzureOpenAIConfig holds Azure OpenAI-specific config.
 	AzureOpenAIConfig *AzureOpenAIConfig
@@ -105,6 +108,11 @@ type VertexConfig struct {
 // BedrockConfig holds AWS Bedrock configuration.
 type BedrockConfig struct {
 	Region string
+}
+
+// GrokConfig holds Grok (xAI)-specific configuration.
+type GrokConfig struct {
+	BaseURL string
 }
 
 // RoutingEntry configures a single provider entry in the routing table.
@@ -495,6 +503,23 @@ func createSingleProvider(ctx context.Context, name string, cfg Config) (interna
 			return nil, fmt.Errorf("langdag: AzureOpenAIConfig.APIKey and AzureOpenAIConfig.Endpoint must be set for openai-azure")
 		}
 		return openaiprovider.NewAzure(ac.APIKey, ac.Endpoint, ac.APIVersion), nil
+
+	case "grok":
+		apiKey := cfg.APIKeys["grok"]
+		if apiKey == "" {
+			apiKey = os.Getenv("XAI_API_KEY")
+		}
+		if apiKey == "" {
+			return nil, fmt.Errorf("langdag: XAI_API_KEY not set")
+		}
+		baseURL := ""
+		if cfg.GrokConfig != nil {
+			baseURL = cfg.GrokConfig.BaseURL
+		}
+		if baseURL == "" {
+			baseURL = os.Getenv("XAI_BASE_URL")
+		}
+		return openaiprovider.NewGrok(apiKey, baseURL), nil
 
 	case "gemini-vertex":
 		vc := cfg.VertexConfig

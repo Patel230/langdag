@@ -235,6 +235,12 @@ var providerRegistry = map[string]providerFactory{
 		}
 		return openaiprovider.NewAzure(ac.APIKey, ac.Endpoint, ac.APIVersion), nil
 	},
+	"grok": func(_ context.Context, c *config.Config) (provider.Provider, error) {
+		if c.Providers.Grok.APIKey == "" {
+			return nil, fmt.Errorf("XAI_API_KEY not set")
+		}
+		return openaiprovider.NewGrok(c.Providers.Grok.APIKey, c.Providers.Grok.BaseURL), nil
+	},
 	"gemini": func(_ context.Context, c *config.Config) (provider.Provider, error) {
 		if c.Providers.Gemini.APIKey == "" {
 			return nil, fmt.Errorf("GEMINI_API_KEY not set")

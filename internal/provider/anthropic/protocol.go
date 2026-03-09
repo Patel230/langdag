@@ -109,26 +109,46 @@ func convertMessages(messages []types.Message) ([]anthropic.MessageParam, error)
 	return result, nil
 }
 
+// anthropicServerTools maps standardized tool names to Anthropic-specific
+// server tool constructors.
+var anthropicServerTools = map[string]func() anthropic.ToolUnionParam{
+	types.ServerToolWebSearch: func() anthropic.ToolUnionParam {
+		return anthropic.ToolUnionParam{
+			OfWebSearchTool20250305: &anthropic.WebSearchTool20250305Param{},
+		}
+	},
+}
+
 // convertTools converts types.ToolDefinition to anthropic tool params.
 func convertTools(tools []types.ToolDefinition) ([]anthropic.ToolUnionParam, error) {
 	result := make([]anthropic.ToolUnionParam, 0, len(tools))
 
 	for _, tool := range tools {
-		var schema map[string]interface{}
-		if err := json.Unmarshal(tool.InputSchema, &schema); err != nil {
-			return nil, fmt.Errorf("failed to parse tool schema: %w", err)
+		if tool.IsClientTool() {
+			var schema map[string]interface{}
+			if err := json.Unmarshal(tool.InputSchema, &schema); err != nil {
+				return nil, fmt.Errorf("failed to parse tool schema: %w", err)
+			}
+
+			properties, _ := schema["properties"].(map[string]interface{})
+
+			toolParam := anthropic.ToolParam{
+				Name:        tool.Name,
+				Description: param.NewOpt(tool.Description),
+				InputSchema: anthropic.ToolInputSchemaParam{
+					Properties: properties,
+				},
+			}
+			result = append(result, anthropic.ToolUnionParam{OfTool: &toolParam})
+			continue
 		}
 
-		properties, _ := schema["properties"].(map[string]interface{})
-
-		toolParam := anthropic.ToolParam{
-			Name:        tool.Name,
-			Description: param.NewOpt(tool.Description),
-			InputSchema: anthropic.ToolInputSchemaParam{
-				Properties: properties,
-			},
+		// Server-side tool
+		ctor, ok := anthropicServerTools[tool.Name]
+		if !ok {
+			return nil, fmt.Errorf("anthropic: unsupported server tool %q", tool.Name)
 		}
-		result = append(result, anthropic.ToolUnionParam{OfTool: &toolParam})
+		result = append(result, ctor())
 	}
 
 	return result, nil

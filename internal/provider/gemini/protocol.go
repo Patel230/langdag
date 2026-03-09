@@ -21,7 +21,7 @@ import (
 type geminiRequest struct {
 	Contents         []content         `json:"contents"`
 	SystemInstruction *content         `json:"system_instruction,omitempty"`
-	Tools            []tool            `json:"tools,omitempty"`
+	Tools            []geminiTool      `json:"tools,omitempty"`
 	GenerationConfig *generationConfig `json:"generation_config,omitempty"`
 }
 
@@ -58,8 +58,26 @@ type functionResponse struct {
 	Response map[string]interface{} `json:"response"`
 }
 
-type tool struct {
-	FunctionDeclarations []functionDeclaration `json:"function_declarations"`
+// geminiTool represents a single entry in the Gemini tools array.
+// It can be either a function declarations bundle or a server-side tool.
+type geminiTool struct {
+	// For function declarations (mutually exclusive with serverToolName)
+	FunctionDeclarations []functionDeclaration `json:"function_declarations,omitempty"`
+	// For server-side tools — the tool name (e.g. "google_search", "code_execution")
+	serverToolName string
+}
+
+// MarshalJSON implements custom marshaling. Server tools are serialized as
+// {"<name>": {}} which is the Gemini API format for built-in tools.
+func (t geminiTool) MarshalJSON() ([]byte, error) {
+	if t.serverToolName != "" {
+		return json.Marshal(map[string]interface{}{t.serverToolName: map[string]interface{}{}})
+	}
+	// For function declarations, use standard marshaling
+	type alias struct {
+		FunctionDeclarations []functionDeclaration `json:"function_declarations,omitempty"`
+	}
+	return json.Marshal(alias{FunctionDeclarations: t.FunctionDeclarations})
 }
 
 type functionDeclaration struct {
@@ -199,16 +217,39 @@ func convertMessages(messages []types.Message) []content {
 	return result
 }
 
-func convertTools(tools []types.ToolDefinition) []tool {
+// geminiServerTools maps standardized tool names to Gemini-specific tool names.
+var geminiServerTools = map[string]string{
+	types.ServerToolWebSearch: "google_search",
+}
+
+func convertTools(tools []types.ToolDefinition) []geminiTool {
 	var decls []functionDeclaration
+	var serverTools []geminiTool
+
 	for _, t := range tools {
-		decls = append(decls, functionDeclaration{
-			Name:        t.Name,
-			Description: t.Description,
-			Parameters:  t.InputSchema,
-		})
+		if t.IsClientTool() {
+			decls = append(decls, functionDeclaration{
+				Name:        t.Name,
+				Description: t.Description,
+				Parameters:  t.InputSchema,
+			})
+			continue
+		}
+
+		// Server-side tool: map name if known, otherwise pass through as-is
+		toolName := t.Name
+		if mapped, ok := geminiServerTools[t.Name]; ok {
+			toolName = mapped
+		}
+		serverTools = append(serverTools, geminiTool{serverToolName: toolName})
 	}
-	return []tool{{FunctionDeclarations: decls}}
+
+	var result []geminiTool
+	if len(decls) > 0 {
+		result = append(result, geminiTool{FunctionDeclarations: decls})
+	}
+	result = append(result, serverTools...)
+	return result
 }
 
 // --- Response conversion ---

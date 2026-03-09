@@ -1519,3 +1519,222 @@ func TestWithTools_TextOnlyResponsePreservesPlainText(t *testing.T) {
 		t.Errorf("content = %q, want %q", node.Content, "plain text answer")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Server-side tools (e.g. web_search)
+// ---------------------------------------------------------------------------
+
+func TestServerTool_WebSearchPassedToProvider(t *testing.T) {
+	// Passing a server tool should not cause errors with the mock provider.
+	client := newTestClient(t, "search results")
+	ctx := context.Background()
+
+	tools := []types.ToolDefinition{
+		{Name: types.ServerToolWebSearch},
+	}
+
+	result, err := client.Prompt(ctx, "Search for langdag", langdag.WithTools(tools))
+	if err != nil {
+		t.Fatalf("Prompt with server tool: %v", err)
+	}
+	nodeID, content := drainStream(t, result)
+	if nodeID == "" {
+		t.Error("expected non-empty nodeID")
+	}
+	if content != "search results" {
+		t.Errorf("content = %q, want %q", content, "search results")
+	}
+}
+
+func TestServerTool_MixedWithFunctionTools(t *testing.T) {
+	// Server tools and function tools should coexist.
+	client := newTestClientWithConfig(t, mock.Config{
+		Mode:          "tool_use",
+		FixedResponse: "Let me search and calculate.",
+		ToolCalls: []mock.ToolCallConfig{
+			{
+				Name:  "calculator",
+				Input: json.RawMessage(`{"expr":"2+2"}`),
+			},
+		},
+	})
+	ctx := context.Background()
+
+	tools := []types.ToolDefinition{
+		{Name: types.ServerToolWebSearch},
+		{
+			Name:        "calculator",
+			Description: "Calculate an expression",
+			InputSchema: json.RawMessage(`{"type":"object","properties":{"expr":{"type":"string"}}}`),
+		},
+	}
+
+	result, err := client.Prompt(ctx, "Search and calculate", langdag.WithTools(tools))
+	if err != nil {
+		t.Fatalf("Prompt: %v", err)
+	}
+
+	var gotToolBlock bool
+	for chunk := range result.Stream {
+		if chunk.Error != nil {
+			t.Fatalf("stream error: %v", chunk.Error)
+		}
+		if chunk.ContentBlock != nil && chunk.ContentBlock.Type == "tool_use" {
+			gotToolBlock = true
+			if chunk.ContentBlock.Name != "calculator" {
+				t.Errorf("tool name = %q, want %q", chunk.ContentBlock.Name, "calculator")
+			}
+		}
+	}
+	if !gotToolBlock {
+		t.Error("expected tool_use content block")
+	}
+	if result.NodeID == "" {
+		t.Error("expected NodeID to be set")
+	}
+}
+
+func TestServerTool_WebSearchWithPromptFrom(t *testing.T) {
+	// Server tools should work with PromptFrom (conversation continuation).
+	client := newTestClient(t, "continued search")
+	ctx := context.Background()
+
+	// Start conversation
+	r1, err := client.Prompt(ctx, "Hello")
+	if err != nil {
+		t.Fatalf("Prompt: %v", err)
+	}
+	nodeID1, _ := drainStream(t, r1)
+
+	// Continue with server tool
+	tools := []types.ToolDefinition{
+		{Name: types.ServerToolWebSearch},
+	}
+	r2, err := client.PromptFrom(ctx, nodeID1, "Now search for something", langdag.WithTools(tools))
+	if err != nil {
+		t.Fatalf("PromptFrom with server tool: %v", err)
+	}
+	nodeID2, content := drainStream(t, r2)
+	if nodeID2 == "" {
+		t.Error("expected nodeID from PromptFrom")
+	}
+	if content != "continued search" {
+		t.Errorf("content = %q, want %q", content, "continued search")
+	}
+}
+
+func TestServerTool_OnlyServerTool(t *testing.T) {
+	// Only server tools, no function tools — should not cause errors.
+	client := newTestClient(t, "just web search")
+	ctx := context.Background()
+
+	tools := []types.ToolDefinition{
+		{Name: types.ServerToolWebSearch},
+	}
+
+	result, err := client.Prompt(ctx, "Search the web", langdag.WithTools(tools))
+	if err != nil {
+		t.Fatalf("Prompt: %v", err)
+	}
+	nodeID, content := drainStream(t, result)
+	if nodeID == "" {
+		t.Error("expected non-empty nodeID")
+	}
+	if content != "just web search" {
+		t.Errorf("content = %q, want %q", content, "just web search")
+	}
+}
+
+func TestServerTool_ClientToolWithSchema(t *testing.T) {
+	// Tools with InputSchema are always client-side function tools.
+	client := newTestClient(t, "function response")
+	ctx := context.Background()
+
+	tools := []types.ToolDefinition{
+		{
+			Name:        "my_custom_tool",
+			Description: "A custom tool",
+			InputSchema: json.RawMessage(`{"type":"object","properties":{"input":{"type":"string"}}}`),
+		},
+	}
+
+	result, err := client.Prompt(ctx, "Use my tool", langdag.WithTools(tools))
+	if err != nil {
+		t.Fatalf("Prompt: %v", err)
+	}
+	nodeID, content := drainStream(t, result)
+	if nodeID == "" {
+		t.Error("expected non-empty nodeID")
+	}
+	if content != "function response" {
+		t.Errorf("content = %q, want %q", content, "function response")
+	}
+}
+
+func TestServerTool_WebSearchWithSchemaIsClientTool(t *testing.T) {
+	// A tool named "web_search" WITH InputSchema is treated as a client-side
+	// function tool, overriding the built-in server tool.
+	client := newTestClientWithConfig(t, mock.Config{
+		Mode:          "tool_use",
+		FixedResponse: "Using custom search.",
+		ToolCalls: []mock.ToolCallConfig{
+			{
+				Name:  "web_search",
+				Input: json.RawMessage(`{"query":"test"}`),
+			},
+		},
+	})
+	ctx := context.Background()
+
+	tools := []types.ToolDefinition{
+		{
+			Name:        types.ServerToolWebSearch,
+			Description: "My custom web search",
+			InputSchema: json.RawMessage(`{"type":"object","properties":{"query":{"type":"string"}}}`),
+		},
+	}
+
+	result, err := client.Prompt(ctx, "Search for test", langdag.WithTools(tools))
+	if err != nil {
+		t.Fatalf("Prompt: %v", err)
+	}
+
+	var gotToolBlock bool
+	for chunk := range result.Stream {
+		if chunk.Error != nil {
+			t.Fatalf("stream error: %v", chunk.Error)
+		}
+		if chunk.ContentBlock != nil && chunk.ContentBlock.Type == "tool_use" {
+			gotToolBlock = true
+			if chunk.ContentBlock.Name != "web_search" {
+				t.Errorf("tool name = %q, want %q", chunk.ContentBlock.Name, "web_search")
+			}
+		}
+	}
+	if !gotToolBlock {
+		t.Error("expected tool_use content block for client-side web_search")
+	}
+}
+
+func TestServerTool_UnknownServerToolName(t *testing.T) {
+	// Tools without InputSchema are server tools. Unknown names should
+	// be passed through (the mock doesn't validate, real APIs will reject if unsupported).
+	client := newTestClient(t, "server tool response")
+	ctx := context.Background()
+
+	tools := []types.ToolDefinition{
+		{Name: "code_execution"}, // unknown server tool, no InputSchema
+	}
+
+	result, err := client.Prompt(ctx, "Execute some code", langdag.WithTools(tools))
+	if err != nil {
+		t.Fatalf("Prompt: %v", err)
+	}
+	nodeID, content := drainStream(t, result)
+	if nodeID == "" {
+		t.Error("expected non-empty nodeID")
+	}
+	if content != "server tool response" {
+		t.Errorf("content = %q, want %q", content, "server tool response")
+	}
+}

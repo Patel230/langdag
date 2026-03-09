@@ -59,8 +59,8 @@ type requestFunction struct {
 }
 
 type requestTool struct {
-	Type     string              `json:"type"`
-	Function requestToolFunction `json:"function"`
+	Type     string               `json:"type"`
+	Function *requestToolFunction `json:"function,omitempty"`
 }
 
 type requestToolFunction struct {
@@ -115,9 +115,18 @@ type tokenDetails struct {
 	ReasoningTokens int `json:"reasoning_tokens,omitempty"`
 }
 
+// Server tool name mappings per OpenAI-protocol variant.
+var openAIServerTools = map[string]string{
+	types.ServerToolWebSearch: "web_search_preview",
+}
+
+var grokServerTools = map[string]string{
+	// Grok uses the standardized name directly.
+}
+
 // --- Request building ---
 
-func buildRequest(req *types.CompletionRequest, stream bool) []byte {
+func buildRequest(req *types.CompletionRequest, stream bool, toolMapping map[string]string) []byte {
 	messages := convertMessages(req.Messages, req.System)
 
 	cr := chatCompletionRequest{
@@ -136,7 +145,7 @@ func buildRequest(req *types.CompletionRequest, stream bool) []byte {
 		cr.Stop = req.StopSeqs
 	}
 	if len(req.Tools) > 0 {
-		cr.Tools = convertTools(req.Tools)
+		cr.Tools = convertTools(req.Tools, toolMapping)
 	}
 	if stream {
 		cr.StreamOptions = &streamOptions{IncludeUsage: true}
@@ -246,17 +255,27 @@ func extractText(parts []contentPart) string {
 	return strings.Join(texts, "\n")
 }
 
-func convertTools(tools []types.ToolDefinition) []requestTool {
-	result := make([]requestTool, len(tools))
-	for i, tool := range tools {
-		result[i] = requestTool{
-			Type: "function",
-			Function: requestToolFunction{
-				Name:        tool.Name,
-				Description: tool.Description,
-				Parameters:  tool.InputSchema,
-			},
+func convertTools(tools []types.ToolDefinition, mapping map[string]string) []requestTool {
+	result := make([]requestTool, 0, len(tools))
+	for _, tool := range tools {
+		if tool.IsClientTool() {
+			result = append(result, requestTool{
+				Type: "function",
+				Function: &requestToolFunction{
+					Name:        tool.Name,
+					Description: tool.Description,
+					Parameters:  tool.InputSchema,
+				},
+			})
+			continue
 		}
+
+		// Server-side tool: map name if known, otherwise pass through as-is
+		typeName := tool.Name
+		if mapped, ok := mapping[tool.Name]; ok {
+			typeName = mapped
+		}
+		result = append(result, requestTool{Type: typeName})
 	}
 	return result
 }

@@ -354,7 +354,7 @@ func TestConvertTools(t *testing.T) {
 		},
 	}
 
-	result := convertTools(tools)
+	result := convertTools(tools, openAIServerTools)
 
 	if len(result) != 1 {
 		t.Fatalf("expected 1 tool, got %d", len(result))
@@ -364,5 +364,46 @@ func TestConvertTools(t *testing.T) {
 	}
 	if result[0].Function.Name != "search" {
 		t.Errorf("expected name 'search', got %s", result[0].Function.Name)
+	}
+}
+
+func TestGrokProviderName(t *testing.T) {
+	p := NewGrok("test-key", "")
+	if p.Name() != "grok" {
+		t.Errorf("expected name 'grok', got '%s'", p.Name())
+	}
+}
+
+func TestGrokProviderModels(t *testing.T) {
+	p := NewGrok("test-key", "")
+	models := p.Models()
+	if len(models) == 0 {
+		t.Fatal("expected at least one model")
+	}
+	for _, m := range models {
+		if m.ID == "" || m.Name == "" {
+			t.Errorf("model missing required fields: %+v", m)
+		}
+	}
+}
+
+func TestGrokDefaultBaseURL(t *testing.T) {
+	p := NewGrok("test-key", "")
+	if p.baseURL != "https://api.x.ai/v1" {
+		t.Errorf("expected default base URL 'https://api.x.ai/v1', got '%s'", p.baseURL)
+	}
+}
+
+func TestGrokCustomBaseURL(t *testing.T) {
+	p := NewGrok("test-key", "https://custom.api.example.com/v1")
+	if p.baseURL != "https://custom.api.example.com/v1" {
+		t.Errorf("expected custom base URL, got '%s'", p.baseURL)
+	}
+}
+
+func TestGrokBaseURLTrimming(t *testing.T) {
+	p := NewGrok("test-key", "https://api.x.ai/v1/")
+	if strings.HasSuffix(p.baseURL, "/") {
+		t.Error("expected trailing slash to be trimmed from base URL")
 	}
 }

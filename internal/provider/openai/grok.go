@@ -12,20 +12,22 @@ import (
 	"langdag.com/langdag/types"
 )
 
-// Provider implements the provider interface for OpenAI-compatible APIs.
-type Provider struct {
+// GrokProvider implements the provider interface for xAI's Grok API.
+// Grok uses an OpenAI-compatible protocol with a different base URL
+// and server tool names.
+type GrokProvider struct {
 	apiKey  string
 	baseURL string
 	client  *http.Client
 }
 
-// New creates a new OpenAI-compatible provider.
-func New(apiKey, baseURL string) *Provider {
+// NewGrok creates a new Grok (xAI) provider.
+func NewGrok(apiKey, baseURL string) *GrokProvider {
 	if baseURL == "" {
-		baseURL = "https://api.openai.com/v1"
+		baseURL = "https://api.x.ai/v1"
 	}
 	baseURL = strings.TrimRight(baseURL, "/")
-	return &Provider{
+	return &GrokProvider{
 		apiKey:  apiKey,
 		baseURL: baseURL,
 		client:  &http.Client{},
@@ -33,22 +35,21 @@ func New(apiKey, baseURL string) *Provider {
 }
 
 // Name returns the provider name.
-func (p *Provider) Name() string {
-	return "openai"
+func (p *GrokProvider) Name() string {
+	return "grok"
 }
 
-// Models returns the available models.
-func (p *Provider) Models() []types.ModelInfo {
+// Models returns the available Grok models.
+func (p *GrokProvider) Models() []types.ModelInfo {
 	return []types.ModelInfo{
-		{ID: "gpt-4o", Name: "GPT-4o", ContextWindow: 128000, MaxOutput: 16384},
-		{ID: "gpt-4o-mini", Name: "GPT-4o Mini", ContextWindow: 128000, MaxOutput: 16384},
-		{ID: "o3-mini", Name: "o3-mini", ContextWindow: 200000, MaxOutput: 100000},
+		{ID: "grok-3", Name: "Grok 3", ContextWindow: 131072, MaxOutput: 16384},
+		{ID: "grok-3-mini", Name: "Grok 3 Mini", ContextWindow: 131072, MaxOutput: 16384},
 	}
 }
 
 // Complete performs a synchronous completion request.
-func (p *Provider) Complete(ctx context.Context, req *types.CompletionRequest) (*types.CompletionResponse, error) {
-	body := buildRequest(req, false, openAIServerTools)
+func (p *GrokProvider) Complete(ctx context.Context, req *types.CompletionRequest) (*types.CompletionResponse, error) {
+	body := buildRequest(req, false, grokServerTools)
 
 	respBody, err := p.doRequest(ctx, body)
 	if err != nil {
@@ -58,15 +59,15 @@ func (p *Provider) Complete(ctx context.Context, req *types.CompletionRequest) (
 
 	var resp chatCompletionResponse
 	if err := json.NewDecoder(respBody).Decode(&resp); err != nil {
-		return nil, fmt.Errorf("openai: failed to decode response: %w", err)
+		return nil, fmt.Errorf("grok: failed to decode response: %w", err)
 	}
 
 	return convertResponse(&resp), nil
 }
 
 // Stream performs a streaming completion request.
-func (p *Provider) Stream(ctx context.Context, req *types.CompletionRequest) (<-chan types.StreamEvent, error) {
-	body := buildRequest(req, true, openAIServerTools)
+func (p *GrokProvider) Stream(ctx context.Context, req *types.CompletionRequest) (<-chan types.StreamEvent, error) {
+	body := buildRequest(req, true, grokServerTools)
 
 	respBody, err := p.doRequest(ctx, body)
 	if err != nil {
@@ -83,10 +84,10 @@ func (p *Provider) Stream(ctx context.Context, req *types.CompletionRequest) (<-
 	return events, nil
 }
 
-func (p *Provider) doRequest(ctx context.Context, body []byte) (io.ReadCloser, error) {
+func (p *GrokProvider) doRequest(ctx context.Context, body []byte) (io.ReadCloser, error) {
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", p.baseURL+"/chat/completions", bytes.NewReader(body))
 	if err != nil {
-		return nil, fmt.Errorf("openai: failed to create request: %w", err)
+		return nil, fmt.Errorf("grok: failed to create request: %w", err)
 	}
 
 	httpReq.Header.Set("Content-Type", "application/json")
@@ -94,13 +95,13 @@ func (p *Provider) doRequest(ctx context.Context, body []byte) (io.ReadCloser, e
 
 	resp, err := p.client.Do(httpReq)
 	if err != nil {
-		return nil, fmt.Errorf("openai: request failed: %w", err)
+		return nil, fmt.Errorf("grok: request failed: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
 		defer resp.Body.Close()
 		bodyBytes, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("openai: API error (status %d): %s", resp.StatusCode, string(bodyBytes))
+		return nil, fmt.Errorf("grok: API error (status %d): %s", resp.StatusCode, string(bodyBytes))
 	}
 
 	return resp.Body, nil

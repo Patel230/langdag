@@ -50,7 +50,7 @@ func (p *AzureProvider) Models() []types.ModelInfo {
 
 // Complete performs a synchronous completion request.
 func (p *AzureProvider) Complete(ctx context.Context, req *types.CompletionRequest) (*types.CompletionResponse, error) {
-	body := buildRequest(req, false)
+	body := buildRequest(req, false, openAIServerTools)
 
 	respBody, err := p.doRequest(ctx, req.Model, body)
 	if err != nil {
@@ -68,7 +68,7 @@ func (p *AzureProvider) Complete(ctx context.Context, req *types.CompletionReque
 
 // Stream performs a streaming completion request.
 func (p *AzureProvider) Stream(ctx context.Context, req *types.CompletionRequest) (<-chan types.StreamEvent, error) {
-	body := buildRequest(req, true)
+	body := buildRequest(req, true, openAIServerTools)
 
 	respBody, err := p.doRequest(ctx, req.Model, body)
 	if err != nil {

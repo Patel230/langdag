@@ -91,6 +91,22 @@ type ToolDefinition struct {
 	InputSchema json.RawMessage `json:"input_schema"`
 }
 
+// ServerToolWebSearch is the standardized name for web search across providers.
+// Use this as the Name in a ToolDefinition to enable the provider's built-in web search.
+const ServerToolWebSearch = "web_search"
+
+// IsClientTool reports whether t is a client-side (user-defined function) tool.
+// A tool is client-side if it has an InputSchema — the client declares its
+// parameters so the LLM knows how to call it. Tools without an InputSchema
+// are treated as server-side tools provided by the LLM platform.
+//
+// Client-side tools take priority: if you provide an InputSchema for a name
+// like "web_search", it will be sent as a function tool rather than the
+// provider's built-in web search.
+func (t ToolDefinition) IsClientTool() bool {
+	return len(t.InputSchema) > 0
+}
+
 // CompletionRequest represents a request to an LLM provider.
 type CompletionRequest struct {
 	Model       string           `json:"model"`
