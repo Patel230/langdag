@@ -3,9 +3,11 @@ package langdag_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -1736,5 +1738,378 @@ func TestServerTool_UnknownServerToolName(t *testing.T) {
 	}
 	if content != "server tool response" {
 		t.Errorf("content = %q, want %q", content, "server tool response")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Structured tool results (ContentJSON)
+// ---------------------------------------------------------------------------
+
+func TestStructuredToolResult_InConversation(t *testing.T) {
+	// Full integration test: structured tool result (ContentJSON) round-trips
+	// through a conversation stored in SQLite.
+	//
+	// Flow:
+	// 1. User asks -> LLM responds with tool_use
+	// 2. User sends tool_result with ContentJSON (structured)
+	// 3. Verify the content blocks survive marshal -> storage -> unmarshal
+
+	client := newTestClientWithConfig(t, mock.Config{
+		Mode:          "tool_use",
+		FixedResponse: "Calling sub-agent.",
+		ToolCalls: []mock.ToolCallConfig{
+			{
+				Name:  "run_sub_agent",
+				Input: json.RawMessage(`{"task":"summarize"}`),
+			},
+		},
+	})
+	ctx := context.Background()
+
+	tools := []types.ToolDefinition{
+		{
+			Name:        "run_sub_agent",
+			Description: "Run a sub-agent task",
+			InputSchema: json.RawMessage(`{"type":"object","properties":{"task":{"type":"string"}}}`),
+		},
+	}
+
+	// Turn 1: get tool_use response
+	r1, err := client.Prompt(ctx, "Summarize the document", langdag.WithTools(tools))
+	if err != nil {
+		t.Fatalf("Prompt: %v", err)
+	}
+	nodeID1, _ := drainStream(t, r1)
+	if nodeID1 == "" {
+		t.Fatal("expected nodeID from turn 1")
+	}
+
+	// Build a tool_result with structured ContentJSON.
+	// This represents what a sub-agent would return: result text plus metadata.
+	structuredResult := json.RawMessage(`{"summary":"Document is about AI agents.","tokens_used":450,"conversation_id":"conv_sub_123"}`)
+	toolResultBlocks := []types.ContentBlock{
+		{
+			Type:        "tool_result",
+			ToolUseID:   "toolu_000000",
+			Content:     "Document is about AI agents.", // plain-text fallback
+			ContentJSON: structuredResult,
+		},
+	}
+	toolResultJSON, err := json.Marshal(toolResultBlocks)
+	if err != nil {
+		t.Fatalf("marshal tool_result blocks: %v", err)
+	}
+
+	// Turn 2: send the structured tool result
+	r2, err := client.PromptFrom(ctx, nodeID1, string(toolResultJSON), langdag.WithTools(tools))
+	if err != nil {
+		t.Fatalf("PromptFrom with structured tool_result: %v", err)
+	}
+	nodeID2, _ := drainStream(t, r2)
+	if nodeID2 == "" {
+		t.Fatal("expected nodeID from turn 2")
+	}
+
+	// Retrieve the tool_result user node from the ancestor chain and verify
+	// ContentJSON survived the storage round-trip.
+	ancestors, err := client.GetAncestors(ctx, nodeID2)
+	if err != nil {
+		t.Fatalf("GetAncestors: %v", err)
+	}
+	// Ancestors: root_user(0), assistant_tool_use(1), user_tool_result(2), assistant_final(3)
+	if len(ancestors) < 4 {
+		t.Fatalf("expected at least 4 ancestors, got %d", len(ancestors))
+	}
+
+	toolResultNode := ancestors[2]
+	// The node content should be a JSON array of content blocks
+	var storedBlocks []types.ContentBlock
+	if err := json.Unmarshal([]byte(toolResultNode.Content), &storedBlocks); err != nil {
+		t.Fatalf("failed to parse tool_result node content: %v\ncontent: %s", err, toolResultNode.Content)
+	}
+
+	if len(storedBlocks) == 0 {
+		t.Fatal("expected at least one content block in tool_result node")
+	}
+
+	block := storedBlocks[0]
+	if block.Type != "tool_result" {
+		t.Errorf("block type = %q, want %q", block.Type, "tool_result")
+	}
+	if block.ToolUseID != "toolu_000000" {
+		t.Errorf("block tool_use_id = %q, want %q", block.ToolUseID, "toolu_000000")
+	}
+
+	// Verify ContentJSON survived the round-trip
+	if len(block.ContentJSON) == 0 {
+		t.Error("ContentJSON was lost during storage round-trip")
+	} else {
+		// Parse and compare the structured content
+		var got map[string]interface{}
+		if err := json.Unmarshal(block.ContentJSON, &got); err != nil {
+			t.Fatalf("failed to parse stored ContentJSON: %v", err)
+		}
+		if got["summary"] != "Document is about AI agents." {
+			t.Errorf("ContentJSON summary = %v, want %q", got["summary"], "Document is about AI agents.")
+		}
+		if got["conversation_id"] != "conv_sub_123" {
+			t.Errorf("ContentJSON conversation_id = %v, want %q", got["conversation_id"], "conv_sub_123")
+		}
+	}
+
+	// Verify ToolResultContent() returns the structured JSON (not the plain string)
+	trc := block.ToolResultContent()
+	if trc == nil {
+		t.Fatal("ToolResultContent() returned nil")
+	}
+	if string(trc) != string(structuredResult) {
+		t.Errorf("ToolResultContent() = %s, want %s", string(trc), string(structuredResult))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Concurrency tests
+// ---------------------------------------------------------------------------
+
+func TestClient_ConcurrentPrompt(t *testing.T) {
+	// Launch multiple goroutines calling Prompt on the same client concurrently.
+	// Each goroutine drains its own stream and verifies the result.
+	// This test is designed to be run with -race to detect data races.
+	client := newTestClient(t, "concurrent response")
+	ctx := context.Background()
+
+	const goroutines = 10
+	var wg sync.WaitGroup
+	errs := make(chan error, goroutines)
+
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+
+			result, err := client.Prompt(ctx, fmt.Sprintf("message %d", idx))
+			if err != nil {
+				errs <- fmt.Errorf("goroutine %d: Prompt: %w", idx, err)
+				return
+			}
+
+			// Drain the stream
+			var content string
+			var nodeID string
+			for chunk := range result.Stream {
+				if chunk.Error != nil {
+					errs <- fmt.Errorf("goroutine %d: stream error: %w", idx, chunk.Error)
+					return
+				}
+				if chunk.Done {
+					nodeID = chunk.NodeID
+				} else {
+					content += chunk.Content
+				}
+			}
+
+			if nodeID == "" {
+				errs <- fmt.Errorf("goroutine %d: empty nodeID", idx)
+				return
+			}
+			if content != "concurrent response" {
+				errs <- fmt.Errorf("goroutine %d: content = %q, want %q", idx, content, "concurrent response")
+				return
+			}
+
+			// Use the concurrent-safe accessors
+			gotNodeID := result.GetNodeID()
+			if gotNodeID != nodeID {
+				errs <- fmt.Errorf("goroutine %d: GetNodeID() = %q, want %q", idx, gotNodeID, nodeID)
+				return
+			}
+			gotContent := result.GetContent()
+			if gotContent != "concurrent response" {
+				errs <- fmt.Errorf("goroutine %d: GetContent() = %q, want %q", idx, gotContent, "concurrent response")
+				return
+			}
+		}(i)
+	}
+
+	wg.Wait()
+	close(errs)
+
+	for err := range errs {
+		t.Error(err)
+	}
+}
+
+func TestClient_ConcurrentPromptFrom(t *testing.T) {
+	// Start a conversation, then launch multiple goroutines calling PromptFrom
+	// from the same parent node concurrently (branching).
+	client := newTestClient(t, "branch response")
+	ctx := context.Background()
+
+	// Create a root conversation node
+	result, err := client.Prompt(ctx, "root message")
+	if err != nil {
+		t.Fatalf("Prompt: %v", err)
+	}
+	parentNodeID, _ := drainStream(t, result)
+	if parentNodeID == "" {
+		t.Fatal("expected non-empty parentNodeID")
+	}
+
+	const goroutines = 10
+	var wg sync.WaitGroup
+	errs := make(chan error, goroutines)
+
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+
+			r, err := client.PromptFrom(ctx, parentNodeID, fmt.Sprintf("branch %d", idx))
+			if err != nil {
+				errs <- fmt.Errorf("goroutine %d: PromptFrom: %w", idx, err)
+				return
+			}
+
+			// Drain the stream
+			var content string
+			var nodeID string
+			for chunk := range r.Stream {
+				if chunk.Error != nil {
+					errs <- fmt.Errorf("goroutine %d: stream error: %w", idx, chunk.Error)
+					return
+				}
+				if chunk.Done {
+					nodeID = chunk.NodeID
+				} else {
+					content += chunk.Content
+				}
+			}
+
+			if nodeID == "" {
+				errs <- fmt.Errorf("goroutine %d: empty nodeID", idx)
+				return
+			}
+			if content != "branch response" {
+				errs <- fmt.Errorf("goroutine %d: content = %q, want %q", idx, content, "branch response")
+				return
+			}
+
+			// Verify the concurrent-safe accessors work after draining
+			gotNodeID := r.GetNodeID()
+			if gotNodeID != nodeID {
+				errs <- fmt.Errorf("goroutine %d: GetNodeID() = %q, want %q", idx, gotNodeID, nodeID)
+				return
+			}
+			gotContent := r.GetContent()
+			if gotContent != "branch response" {
+				errs <- fmt.Errorf("goroutine %d: GetContent() = %q, want %q", idx, gotContent, "branch response")
+				return
+			}
+		}(i)
+	}
+
+	wg.Wait()
+	close(errs)
+
+	for err := range errs {
+		t.Error(err)
+	}
+
+	// Verify all branches created distinct nodes under the same parent
+	subtree, err := client.GetSubtree(ctx, parentNodeID)
+	if err != nil {
+		t.Fatalf("GetSubtree: %v", err)
+	}
+	// subtree includes the parent + user nodes + assistant nodes for each branch
+	// Each branch creates 2 nodes (user + assistant), so we expect at least
+	// 1 (parent) + goroutines*2 nodes.
+	expectedMin := 1 + goroutines*2
+	if len(subtree) < expectedMin {
+		t.Errorf("subtree has %d nodes, expected at least %d", len(subtree), expectedMin)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// WithMaxTurns
+// ---------------------------------------------------------------------------
+
+func TestWithMaxTurns_DefaultUnlimited(t *testing.T) {
+	// When no WithMaxTurns option is provided, the default should be 0
+	// (unlimited).
+	client := newTestClient(t, "hello")
+	ctx := context.Background()
+
+	result, err := client.Prompt(ctx, "hi")
+	if err != nil {
+		t.Fatalf("Prompt: %v", err)
+	}
+	// MaxTurns is set before streaming starts, so it's safe to read immediately.
+	if result.MaxTurns != 0 {
+		t.Errorf("MaxTurns = %d, want 0 (unlimited)", result.MaxTurns)
+	}
+	drainStream(t, result)
+}
+
+func TestWithMaxTurns_SetValue(t *testing.T) {
+	// WithMaxTurns(5) should set MaxTurns=5 on the result.
+	client := newTestClient(t, "hello")
+	ctx := context.Background()
+
+	result, err := client.Prompt(ctx, "hi", langdag.WithMaxTurns(5))
+	if err != nil {
+		t.Fatalf("Prompt: %v", err)
+	}
+	if result.MaxTurns != 5 {
+		t.Errorf("MaxTurns = %d, want 5", result.MaxTurns)
+	}
+	drainStream(t, result)
+}
+
+func TestWithMaxTurns_AvailableOnResult(t *testing.T) {
+	// Full Prompt flow with WithMaxTurns: drain the stream, then verify
+	// MaxTurns is still accessible on the result.
+	client := newTestClient(t, "response text")
+	ctx := context.Background()
+
+	result, err := client.Prompt(ctx, "tell me something", langdag.WithMaxTurns(3))
+	if err != nil {
+		t.Fatalf("Prompt: %v", err)
+	}
+
+	nodeID, content := drainStream(t, result)
+	if nodeID == "" {
+		t.Error("expected non-empty nodeID")
+	}
+	if content != "response text" {
+		t.Errorf("content = %q, want %q", content, "response text")
+	}
+	if result.MaxTurns != 3 {
+		t.Errorf("MaxTurns after drain = %d, want 3", result.MaxTurns)
+	}
+}
+
+func TestWithMaxTurns_PromptFrom(t *testing.T) {
+	// WithMaxTurns should also work with PromptFrom.
+	client := newTestClient(t, "continued")
+	ctx := context.Background()
+
+	// Start a conversation.
+	r1, err := client.Prompt(ctx, "start")
+	if err != nil {
+		t.Fatalf("Prompt: %v", err)
+	}
+	nodeID1, _ := drainStream(t, r1)
+
+	// Continue with WithMaxTurns.
+	r2, err := client.PromptFrom(ctx, nodeID1, "continue", langdag.WithMaxTurns(10))
+	if err != nil {
+		t.Fatalf("PromptFrom: %v", err)
+	}
+	if r2.MaxTurns != 10 {
+		t.Errorf("MaxTurns = %d, want 10", r2.MaxTurns)
+	}
+	nodeID2, _ := drainStream(t, r2)
+	if nodeID2 == "" {
+		t.Error("expected non-empty nodeID from PromptFrom")
 	}
 }

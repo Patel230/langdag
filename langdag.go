@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"langdag.com/langdag/internal/conversation"
@@ -137,6 +138,11 @@ type RetryConfig struct {
 }
 
 // Client is the main langdag client for managing AI conversations.
+//
+// A Client is safe for concurrent use by multiple goroutines. The underlying
+// storage (SQLite with WAL mode and busy_timeout) and providers (stateless HTTP
+// clients) are themselves concurrent-safe, and each call to Prompt or PromptFrom
+// returns an independent PromptResult with its own streaming channel.
 type Client struct {
 	store   internalstorage.Storage
 	prov    internalprovider.Provider
@@ -218,6 +224,7 @@ type promptOptions struct {
 	model        string
 	systemPrompt string
 	maxTokens    int
+	maxTurns     int
 	tools        []types.ToolDefinition
 }
 
@@ -242,6 +249,17 @@ func WithMaxTokens(n int) PromptOption {
 	}
 }
 
+// WithMaxTurns sets the maximum number of LLM round-trips for a single
+// Prompt/PromptFrom call. Since langdag does not have a built-in tool-use
+// loop, the value is exposed on the PromptResult so the caller can
+// decrement and check it in their own multi-turn loop.
+// A value of 0 (the default) means unlimited.
+func WithMaxTurns(n int) PromptOption {
+	return func(o *promptOptions) {
+		o.maxTurns = n
+	}
+}
+
 // WithTools sets the tool definitions for the prompt.
 // When tools are provided, the LLM may respond with tool_use content blocks.
 func WithTools(tools []types.ToolDefinition) PromptOption {
@@ -251,6 +269,12 @@ func WithTools(tools []types.ToolDefinition) PromptOption {
 }
 
 // PromptResult holds the result of a prompt call.
+//
+// The NodeID and Content fields are written by a background goroutine as the
+// stream is consumed. Reading them directly before the stream is fully drained
+// is a data race. Use the GetNodeID and GetContent accessor methods for
+// concurrent-safe access at any time, or read the fields only after the Stream
+// channel has been fully drained (closed).
 type PromptResult struct {
 	// NodeID is the ID of the saved assistant node (set when streaming completes,
 	// or immediately for non-streaming use when the stream is consumed).
@@ -262,6 +286,32 @@ type PromptResult struct {
 	// Stream is the streaming channel. Range over it to receive chunks.
 	// It is never nil; even for simple use cases, consumers should drain it.
 	Stream <-chan StreamChunk
+
+	// MaxTurns is the maximum number of LLM round-trips the caller should
+	// allow for this conversation. 0 means unlimited. Since langdag does not
+	// have a built-in tool-use loop, the caller can use this value to enforce
+	// a turn budget in their own multi-turn loop.
+	MaxTurns int
+
+	// mu protects concurrent writes to NodeID and Content from the background
+	// goroutine in buildResult.
+	mu sync.Mutex
+}
+
+// GetNodeID returns the node ID in a concurrent-safe manner.
+// The value is only meaningful after the stream has delivered a Done chunk.
+func (r *PromptResult) GetNodeID() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.NodeID
+}
+
+// GetContent returns the full response content in a concurrent-safe manner.
+// The value is only meaningful after the stream has been fully drained.
+func (r *PromptResult) GetContent() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.Content
 }
 
 // StreamChunk is a piece of a streaming response.
@@ -294,7 +344,9 @@ func (c *Client) Prompt(ctx context.Context, message string, opts ...PromptOptio
 	if err != nil {
 		return nil, err
 	}
-	return buildResult(events), nil
+	result := buildResult(events)
+	result.MaxTurns = o.maxTurns
+	return result, nil
 }
 
 // PromptFrom continues a conversation from an existing node.
@@ -304,7 +356,9 @@ func (c *Client) PromptFrom(ctx context.Context, nodeID string, message string, 
 	if err != nil {
 		return nil, err
 	}
-	return buildResult(events), nil
+	result := buildResult(events)
+	result.MaxTurns = o.maxTurns
+	return result, nil
 }
 
 // ListConversations returns all root conversation nodes.
@@ -392,8 +446,10 @@ func buildResult(events <-chan types.StreamEvent) *PromptResult {
 				terminated = true
 				return
 			case types.StreamEventNodeSaved:
+				result.mu.Lock()
 				result.NodeID = event.NodeID
 				result.Content = accumulated
+				result.mu.Unlock()
 				ch <- StreamChunk{Done: true, NodeID: event.NodeID, StopReason: stopReason}
 				terminated = true
 			}
@@ -402,7 +458,9 @@ func buildResult(events <-chan types.StreamEvent) *PromptResult {
 		// closed the channel early or returned an empty stream), send a Done
 		// chunk so consumers never hang waiting for one.
 		if !terminated {
+			result.mu.Lock()
 			result.Content = accumulated
+			result.mu.Unlock()
 			ch <- StreamChunk{
 				Done:       true,
 				Error:      fmt.Errorf("stream ended without completion"),

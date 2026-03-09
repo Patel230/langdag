@@ -30,9 +30,26 @@ type ContentBlock struct {
 	Input json.RawMessage `json:"input,omitempty"`
 
 	// For tool_result blocks
-	ToolUseID string `json:"tool_use_id,omitempty"`
-	Content   string `json:"content,omitempty"`
-	IsError   bool   `json:"is_error,omitempty"`
+	ToolUseID   string          `json:"tool_use_id,omitempty"`
+	Content     string          `json:"content,omitempty"`
+	ContentJSON json.RawMessage `json:"content_json,omitempty"` // structured tool result (takes priority over Content when set)
+	IsError     bool            `json:"is_error,omitempty"`
+}
+
+// ToolResultContent returns the tool result content as a JSON value.
+// If ContentJSON is set, it is returned directly (structured result).
+// Otherwise, Content is marshaled as a JSON string.
+// Returns nil if both ContentJSON and Content are empty.
+func (b *ContentBlock) ToolResultContent() json.RawMessage {
+	if len(b.ContentJSON) > 0 {
+		return b.ContentJSON
+	}
+	if b.Content == "" {
+		return nil
+	}
+	// Marshal the plain string as a JSON string value.
+	data, _ := json.Marshal(b.Content)
+	return json.RawMessage(data)
 }
 
 // NodeType represents the type of a node.
