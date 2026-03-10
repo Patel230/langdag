@@ -332,10 +332,38 @@ func TestFetchLatest(t *testing.T) {
 	}))
 	defer server.Close()
 
+	openAIServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("## Text tokens\n\n| Name | Input | Cached input | Output | Unit |\n| --- | --- | --- | --- | --- |\n| gpt-4o | 2.5 | 1.25 | 10 | 1M tokens |\n"))
+	}))
+	defer openAIServer.Close()
+	anthropicServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`<table><tr><th>Feature</th><th>Model</th></tr><tr><td>Claude API ID</td><td>claude-sonnet-4-6</td></tr><tr><td>Pricing</td><td>$3 / input MTok $15 / output MTok</td></tr><tr><td>Context window</td><td>200K tokens</td></tr><tr><td>Max output</td><td>64K tokens</td></tr></table>`))
+	}))
+	defer anthropicServer.Close()
+	geminiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`<h3>Gemini 2.5 Flash</h3><p>Input price $0.30</p><p>Output price $2.50</p>`))
+	}))
+	defer geminiServer.Close()
+	grokServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`\"name\":\"grok-3\",\"promptTextTokenPrice\":\"$n30000\",\"completionTextTokenPrice\":\"$n150000\",\"maxPromptLength\":131072`))
+	}))
+	defer grokServer.Close()
+
 	// Override the URL for testing
 	origURL := fetchURL
-	defer func() { setLiteLLMURL(origURL) }()
+	origOpenAI, origAnthropic, origGemini, origGrok := openAISourceURL, anthropicSourceURL, geminiSourceURL, grokSourceURL
+	defer func() {
+		setLiteLLMURL(origURL)
+		openAISourceURL = origOpenAI
+		anthropicSourceURL = origAnthropic
+		geminiSourceURL = origGemini
+		grokSourceURL = origGrok
+	}()
 	setLiteLLMURL(server.URL)
+	openAISourceURL = openAIServer.URL
+	anthropicSourceURL = anthropicServer.URL
+	geminiSourceURL = geminiServer.URL
+	grokSourceURL = grokServer.URL
 
 	catalog, err := FetchLatest(context.Background())
 	if err != nil {

@@ -43,7 +43,7 @@ func runModels(cmd *cobra.Command, args []string) {
 
 	if modelsUpdate {
 		fmt.Fprintln(os.Stderr, "Fetching latest model data...")
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
 
 		catalog, err = models.FetchLatest(ctx)

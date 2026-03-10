@@ -1,54 +1,54 @@
 {
-  "updated_at": "2026-03-09T18:43:42Z",
+  "updated_at": "2026-03-10T01:44:35.692743Z",
   "source": "litellm",
   "providers": {
     "anthropic": [
       {
         "id": "claude-3-5-haiku-20241022",
         "input_price_per_1m": 0.8,
-        "output_price_per_1m": 4.0,
+        "output_price_per_1m": 4,
         "context_window": 200000,
         "max_output": 8192
       },
       {
         "id": "claude-3-5-haiku-latest",
-        "input_price_per_1m": 1.0,
-        "output_price_per_1m": 5.0,
+        "input_price_per_1m": 1,
+        "output_price_per_1m": 5,
         "context_window": 200000,
         "max_output": 8192
       },
       {
         "id": "claude-3-5-sonnet-20240620",
-        "input_price_per_1m": 3.0,
-        "output_price_per_1m": 15.0,
+        "input_price_per_1m": 3,
+        "output_price_per_1m": 15,
         "context_window": 200000,
         "max_output": 8192
       },
       {
         "id": "claude-3-5-sonnet-20241022",
-        "input_price_per_1m": 3.0,
-        "output_price_per_1m": 15.0,
+        "input_price_per_1m": 3,
+        "output_price_per_1m": 15,
         "context_window": 200000,
         "max_output": 8192
       },
       {
         "id": "claude-3-5-sonnet-latest",
-        "input_price_per_1m": 3.0,
-        "output_price_per_1m": 15.0,
+        "input_price_per_1m": 3,
+        "output_price_per_1m": 15,
         "context_window": 200000,
         "max_output": 8192
       },
       {
         "id": "claude-3-7-sonnet-20250219",
-        "input_price_per_1m": 3.0,
-        "output_price_per_1m": 15.0,
+        "input_price_per_1m": 3,
+        "output_price_per_1m": 15,
         "context_window": 200000,
         "max_output": 64000
       },
       {
         "id": "claude-3-7-sonnet-latest",
-        "input_price_per_1m": 3.0,
-        "output_price_per_1m": 15.0,
+        "input_price_per_1m": 3,
+        "output_price_per_1m": 15,
         "context_window": 200000,
         "max_output": 64000
       },
@@ -61,120 +61,120 @@
       },
       {
         "id": "claude-3-opus-20240229",
-        "input_price_per_1m": 15.0,
-        "output_price_per_1m": 75.0,
+        "input_price_per_1m": 15,
+        "output_price_per_1m": 75,
         "context_window": 200000,
         "max_output": 4096
       },
       {
         "id": "claude-3-opus-latest",
-        "input_price_per_1m": 15.0,
-        "output_price_per_1m": 75.0,
+        "input_price_per_1m": 15,
+        "output_price_per_1m": 75,
         "context_window": 200000,
         "max_output": 4096
       },
       {
         "id": "claude-4-opus-20250514",
-        "input_price_per_1m": 15.0,
-        "output_price_per_1m": 75.0,
+        "input_price_per_1m": 15,
+        "output_price_per_1m": 75,
         "context_window": 200000,
         "max_output": 32000
       },
       {
         "id": "claude-4-sonnet-20250514",
-        "input_price_per_1m": 3.0,
-        "output_price_per_1m": 15.0,
+        "input_price_per_1m": 3,
+        "output_price_per_1m": 15,
         "context_window": 1000000,
         "max_output": 64000
       },
       {
         "id": "claude-haiku-4-5",
-        "input_price_per_1m": 1.0,
-        "output_price_per_1m": 5.0,
+        "input_price_per_1m": 1,
+        "output_price_per_1m": 5,
         "context_window": 200000,
         "max_output": 64000
       },
       {
         "id": "claude-haiku-4-5-20251001",
-        "input_price_per_1m": 1.0,
-        "output_price_per_1m": 5.0,
+        "input_price_per_1m": 1,
+        "output_price_per_1m": 5,
         "context_window": 200000,
         "max_output": 64000
       },
       {
         "id": "claude-opus-4-1",
-        "input_price_per_1m": 15.0,
-        "output_price_per_1m": 75.0,
+        "input_price_per_1m": 15,
+        "output_price_per_1m": 75,
         "context_window": 200000,
         "max_output": 32000
       },
       {
         "id": "claude-opus-4-1-20250805",
-        "input_price_per_1m": 15.0,
-        "output_price_per_1m": 75.0,
+        "input_price_per_1m": 15,
+        "output_price_per_1m": 75,
         "context_window": 200000,
         "max_output": 32000
       },
       {
         "id": "claude-opus-4-20250514",
-        "input_price_per_1m": 15.0,
-        "output_price_per_1m": 75.0,
+        "input_price_per_1m": 15,
+        "output_price_per_1m": 75,
         "context_window": 200000,
         "max_output": 32000
       },
       {
         "id": "claude-opus-4-5",
-        "input_price_per_1m": 5.0,
-        "output_price_per_1m": 25.0,
+        "input_price_per_1m": 5,
+        "output_price_per_1m": 25,
         "context_window": 200000,
         "max_output": 64000
       },
       {
         "id": "claude-opus-4-5-20251101",
-        "input_price_per_1m": 5.0,
-        "output_price_per_1m": 25.0,
+        "input_price_per_1m": 5,
+        "output_price_per_1m": 25,
         "context_window": 200000,
         "max_output": 64000
       },
       {
         "id": "claude-opus-4-6",
-        "input_price_per_1m": 5.0,
-        "output_price_per_1m": 25.0,
-        "context_window": 1000000,
+        "input_price_per_1m": 5,
+        "output_price_per_1m": 25,
+        "context_window": 200000,
         "max_output": 128000
       },
       {
         "id": "claude-opus-4-6-20260205",
-        "input_price_per_1m": 5.0,
-        "output_price_per_1m": 25.0,
+        "input_price_per_1m": 5,
+        "output_price_per_1m": 25,
         "context_window": 1000000,
         "max_output": 128000
       },
       {
         "id": "claude-sonnet-4-20250514",
-        "input_price_per_1m": 3.0,
-        "output_price_per_1m": 15.0,
+        "input_price_per_1m": 3,
+        "output_price_per_1m": 15,
         "context_window": 1000000,
         "max_output": 64000
       },
       {
         "id": "claude-sonnet-4-5",
-        "input_price_per_1m": 3.0,
-        "output_price_per_1m": 15.0,
+        "input_price_per_1m": 3,
+        "output_price_per_1m": 15,
         "context_window": 200000,
         "max_output": 64000
       },
       {
         "id": "claude-sonnet-4-5-20250929",
-        "input_price_per_1m": 3.0,
-        "output_price_per_1m": 15.0,
+        "input_price_per_1m": 3,
+        "output_price_per_1m": 15,
         "context_window": 200000,
         "max_output": 64000
       },
       {
         "id": "claude-sonnet-4-6",
-        "input_price_per_1m": 3.0,
-        "output_price_per_1m": 15.0,
+        "input_price_per_1m": 3,
+        "output_price_per_1m": 15,
         "context_window": 200000,
         "max_output": 64000
       }
@@ -358,7 +358,7 @@
       {
         "id": "gemini-2.5-computer-use-preview-10-2025",
         "input_price_per_1m": 1.25,
-        "output_price_per_1m": 10.0,
+        "output_price_per_1m": 10,
         "context_window": 128000,
         "max_output": 64000
       },
@@ -456,7 +456,7 @@
       {
         "id": "gemini-2.5-pro",
         "input_price_per_1m": 1.25,
-        "output_price_per_1m": 10.0,
+        "output_price_per_1m": 10,
         "context_window": 1048576,
         "max_output": 65535
       },
@@ -470,42 +470,42 @@
       {
         "id": "gemini-2.5-pro-preview-03-25",
         "input_price_per_1m": 1.25,
-        "output_price_per_1m": 10.0,
+        "output_price_per_1m": 10,
         "context_window": 1048576,
         "max_output": 65535
       },
       {
         "id": "gemini-2.5-pro-preview-05-06",
         "input_price_per_1m": 1.25,
-        "output_price_per_1m": 10.0,
+        "output_price_per_1m": 10,
         "context_window": 1048576,
         "max_output": 65535
       },
       {
         "id": "gemini-2.5-pro-preview-06-05",
         "input_price_per_1m": 1.25,
-        "output_price_per_1m": 10.0,
+        "output_price_per_1m": 10,
         "context_window": 1048576,
         "max_output": 65535
       },
       {
         "id": "gemini-2.5-pro-preview-tts",
         "input_price_per_1m": 1.25,
-        "output_price_per_1m": 10.0,
+        "output_price_per_1m": 10,
         "context_window": 1048576,
         "max_output": 65535
       },
       {
         "id": "gemini-3-flash-preview",
         "input_price_per_1m": 0.5,
-        "output_price_per_1m": 3.0,
+        "output_price_per_1m": 3,
         "context_window": 1048576,
         "max_output": 65535
       },
       {
         "id": "gemini-3-pro-preview",
-        "input_price_per_1m": 2.0,
-        "output_price_per_1m": 12.0,
+        "input_price_per_1m": 2,
+        "output_price_per_1m": 12,
         "context_window": 1048576,
         "max_output": 65535
       },
@@ -518,15 +518,15 @@
       },
       {
         "id": "gemini-3.1-pro-preview",
-        "input_price_per_1m": 2.0,
-        "output_price_per_1m": 12.0,
+        "input_price_per_1m": 2,
+        "output_price_per_1m": 12,
         "context_window": 1048576,
         "max_output": 65536
       },
       {
         "id": "gemini-3.1-pro-preview-customtools",
-        "input_price_per_1m": 2.0,
-        "output_price_per_1m": 12.0,
+        "input_price_per_1m": 2,
+        "output_price_per_1m": 12,
         "context_window": 1048576,
         "max_output": 65536
       },
@@ -539,17 +539,17 @@
       },
       {
         "id": "gemini-exp-1206",
-        "input_price_per_1m": 0,
-        "output_price_per_1m": 0,
-        "context_window": 2097152,
-        "max_output": 8192
-      },
-      {
-        "id": "gemini-exp-1206",
         "input_price_per_1m": 0.3,
         "output_price_per_1m": 2.5,
         "context_window": 1048576,
         "max_output": 65535
+      },
+      {
+        "id": "gemini-exp-1206",
+        "input_price_per_1m": 0,
+        "output_price_per_1m": 0,
+        "context_window": 2097152,
+        "max_output": 8192
       },
       {
         "id": "gemini-flash-latest",
@@ -603,14 +603,14 @@
       {
         "id": "gemini-pro-latest",
         "input_price_per_1m": 1.25,
-        "output_price_per_1m": 10.0,
+        "output_price_per_1m": 10,
         "context_window": 1048576,
         "max_output": 65535
       },
       {
         "id": "gemini-pro-latest",
         "input_price_per_1m": 1.25,
-        "output_price_per_1m": 10.0,
+        "output_price_per_1m": 10,
         "context_window": 1048576,
         "max_output": 65535
       },
@@ -641,83 +641,111 @@
         "output_price_per_1m": 0,
         "context_window": 32767,
         "max_output": 8192
+      },
+      {
+        "id": "gemini-3.1-pro",
+        "input_price_per_1m": 2,
+        "output_price_per_1m": 12,
+        "context_window": 0,
+        "max_output": 0
+      },
+      {
+        "id": "gemini-3.1-flash-lite",
+        "input_price_per_1m": 0.25,
+        "output_price_per_1m": 1.5,
+        "context_window": 0,
+        "max_output": 0
+      },
+      {
+        "id": "gemini-2.5-computer",
+        "input_price_per_1m": 1.25,
+        "output_price_per_1m": 10,
+        "context_window": 0,
+        "max_output": 0
+      },
+      {
+        "id": "gemini-3-flash",
+        "input_price_per_1m": 0.5,
+        "output_price_per_1m": 3,
+        "context_window": 0,
+        "max_output": 0
       }
     ],
     "grok": [
       {
         "id": "grok-2",
-        "input_price_per_1m": 2.0,
-        "output_price_per_1m": 10.0,
+        "input_price_per_1m": 2,
+        "output_price_per_1m": 10,
         "context_window": 131072,
         "max_output": 131072
       },
       {
         "id": "grok-2-1212",
-        "input_price_per_1m": 2.0,
-        "output_price_per_1m": 10.0,
+        "input_price_per_1m": 2,
+        "output_price_per_1m": 10,
         "context_window": 131072,
         "max_output": 131072
       },
       {
         "id": "grok-2-latest",
-        "input_price_per_1m": 2.0,
-        "output_price_per_1m": 10.0,
+        "input_price_per_1m": 2,
+        "output_price_per_1m": 10,
         "context_window": 131072,
         "max_output": 131072
       },
       {
         "id": "grok-2-vision",
-        "input_price_per_1m": 2.0,
-        "output_price_per_1m": 10.0,
+        "input_price_per_1m": 2,
+        "output_price_per_1m": 10,
         "context_window": 32768,
         "max_output": 32768
       },
       {
         "id": "grok-2-vision-1212",
-        "input_price_per_1m": 2.0,
-        "output_price_per_1m": 10.0,
+        "input_price_per_1m": 2,
+        "output_price_per_1m": 10,
         "context_window": 32768,
         "max_output": 32768
       },
       {
         "id": "grok-2-vision-latest",
-        "input_price_per_1m": 2.0,
-        "output_price_per_1m": 10.0,
+        "input_price_per_1m": 2,
+        "output_price_per_1m": 10,
         "context_window": 32768,
         "max_output": 32768
       },
       {
         "id": "grok-3",
-        "input_price_per_1m": 3.0,
-        "output_price_per_1m": 15.0,
+        "input_price_per_1m": 3,
+        "output_price_per_1m": 15,
         "context_window": 131072,
         "max_output": 131072
       },
       {
         "id": "grok-3-beta",
-        "input_price_per_1m": 3.0,
-        "output_price_per_1m": 15.0,
+        "input_price_per_1m": 3,
+        "output_price_per_1m": 15,
         "context_window": 131072,
         "max_output": 131072
       },
       {
         "id": "grok-3-fast-beta",
-        "input_price_per_1m": 5.0,
-        "output_price_per_1m": 25.0,
+        "input_price_per_1m": 5,
+        "output_price_per_1m": 25,
         "context_window": 131072,
         "max_output": 131072
       },
       {
         "id": "grok-3-fast-latest",
-        "input_price_per_1m": 5.0,
-        "output_price_per_1m": 25.0,
+        "input_price_per_1m": 5,
+        "output_price_per_1m": 25,
         "context_window": 131072,
         "max_output": 131072
       },
       {
         "id": "grok-3-latest",
-        "input_price_per_1m": 3.0,
-        "output_price_per_1m": 15.0,
+        "input_price_per_1m": 3,
+        "output_price_per_1m": 15,
         "context_window": 131072,
         "max_output": 131072
       },
@@ -738,21 +766,21 @@
       {
         "id": "grok-3-mini-fast",
         "input_price_per_1m": 0.6,
-        "output_price_per_1m": 4.0,
+        "output_price_per_1m": 4,
         "context_window": 131072,
         "max_output": 131072
       },
       {
         "id": "grok-3-mini-fast-beta",
         "input_price_per_1m": 0.6,
-        "output_price_per_1m": 4.0,
+        "output_price_per_1m": 4,
         "context_window": 131072,
         "max_output": 131072
       },
       {
         "id": "grok-3-mini-fast-latest",
         "input_price_per_1m": 0.6,
-        "output_price_per_1m": 4.0,
+        "output_price_per_1m": 4,
         "context_window": 131072,
         "max_output": 131072
       },
@@ -765,78 +793,29 @@
       },
       {
         "id": "grok-4",
-        "input_price_per_1m": 3.0,
-        "output_price_per_1m": 15.0,
+        "input_price_per_1m": 3,
+        "output_price_per_1m": 15,
         "context_window": 256000,
         "max_output": 256000
       },
       {
         "id": "grok-4-0709",
-        "input_price_per_1m": 3.0,
-        "output_price_per_1m": 15.0,
+        "input_price_per_1m": 3,
+        "output_price_per_1m": 15,
         "context_window": 256000,
         "max_output": 256000
       },
       {
-        "id": "grok-4-1-fast",
-        "input_price_per_1m": 0.2,
-        "output_price_per_1m": 0.5,
-        "context_window": 2000000.0,
-        "max_output": 2000000.0
-      },
-      {
-        "id": "grok-4-1-fast-non-reasoning",
-        "input_price_per_1m": 0.2,
-        "output_price_per_1m": 0.5,
-        "context_window": 2000000.0,
-        "max_output": 2000000.0
-      },
-      {
-        "id": "grok-4-1-fast-non-reasoning-latest",
-        "input_price_per_1m": 0.2,
-        "output_price_per_1m": 0.5,
-        "context_window": 2000000.0,
-        "max_output": 2000000.0
-      },
-      {
-        "id": "grok-4-1-fast-reasoning",
-        "input_price_per_1m": 0.2,
-        "output_price_per_1m": 0.5,
-        "context_window": 2000000.0,
-        "max_output": 2000000.0
-      },
-      {
-        "id": "grok-4-1-fast-reasoning-latest",
-        "input_price_per_1m": 0.2,
-        "output_price_per_1m": 0.5,
-        "context_window": 2000000.0,
-        "max_output": 2000000.0
-      },
-      {
-        "id": "grok-4-fast-non-reasoning",
-        "input_price_per_1m": 0.2,
-        "output_price_per_1m": 0.5,
-        "context_window": 2000000.0,
-        "max_output": 2000000.0
-      },
-      {
-        "id": "grok-4-fast-reasoning",
-        "input_price_per_1m": 0.2,
-        "output_price_per_1m": 0.5,
-        "context_window": 2000000.0,
-        "max_output": 2000000.0
-      },
-      {
         "id": "grok-4-latest",
-        "input_price_per_1m": 3.0,
-        "output_price_per_1m": 15.0,
+        "input_price_per_1m": 3,
+        "output_price_per_1m": 15,
         "context_window": 256000,
         "max_output": 256000
       },
       {
         "id": "grok-beta",
-        "input_price_per_1m": 5.0,
-        "output_price_per_1m": 15.0,
+        "input_price_per_1m": 5,
+        "output_price_per_1m": 15,
         "context_window": 131072,
         "max_output": 131072
       },
@@ -863,24 +842,52 @@
       },
       {
         "id": "grok-vision-beta",
-        "input_price_per_1m": 5.0,
-        "output_price_per_1m": 15.0,
+        "input_price_per_1m": 5,
+        "output_price_per_1m": 15,
         "context_window": 8192,
         "max_output": 8192
+      },
+      {
+        "id": "grok-4-1-fast-reasoning",
+        "input_price_per_1m": 0.2,
+        "output_price_per_1m": 0.5,
+        "context_window": 2000000,
+        "max_output": 0
+      },
+      {
+        "id": "grok-4-1-fast-non-reasoning",
+        "input_price_per_1m": 0.2,
+        "output_price_per_1m": 0.5,
+        "context_window": 2000000,
+        "max_output": 0
+      },
+      {
+        "id": "grok-4-fast-non-reasoning",
+        "input_price_per_1m": 0.2,
+        "output_price_per_1m": 0.5,
+        "context_window": 2000000,
+        "max_output": 0
+      },
+      {
+        "id": "grok-4-fast-reasoning",
+        "input_price_per_1m": 0.2,
+        "output_price_per_1m": 0.5,
+        "context_window": 2000000,
+        "max_output": 0
       }
     ],
     "openai": [
       {
         "id": "chatgpt-4o-latest",
-        "input_price_per_1m": 5.0,
-        "output_price_per_1m": 15.0,
+        "input_price_per_1m": 5,
+        "output_price_per_1m": 15,
         "context_window": 128000,
         "max_output": 4096
       },
       {
         "id": "codex-mini-latest",
         "input_price_per_1m": 1.5,
-        "output_price_per_1m": 6.0,
+        "output_price_per_1m": 6,
         "context_window": 200000,
         "max_output": 100000
       },
@@ -901,140 +908,140 @@
       {
         "id": "gpt-3.5-turbo-0301",
         "input_price_per_1m": 1.5,
-        "output_price_per_1m": 2.0,
+        "output_price_per_1m": 2,
         "context_window": 4097,
         "max_output": 4096
       },
       {
         "id": "gpt-3.5-turbo-0613",
         "input_price_per_1m": 1.5,
-        "output_price_per_1m": 2.0,
-        "context_window": 4097,
+        "output_price_per_1m": 2,
+        "context_window": 16385,
         "max_output": 4096
       },
       {
         "id": "gpt-3.5-turbo-1106",
-        "input_price_per_1m": 1.0,
-        "output_price_per_1m": 2.0,
+        "input_price_per_1m": 1,
+        "output_price_per_1m": 2,
         "context_window": 16385,
         "max_output": 4096
       },
       {
         "id": "gpt-3.5-turbo-16k",
-        "input_price_per_1m": 3.0,
-        "output_price_per_1m": 4.0,
+        "input_price_per_1m": 3,
+        "output_price_per_1m": 4,
         "context_window": 16385,
         "max_output": 4096
       },
       {
         "id": "gpt-3.5-turbo-16k-0613",
-        "input_price_per_1m": 3.0,
-        "output_price_per_1m": 4.0,
+        "input_price_per_1m": 3,
+        "output_price_per_1m": 4,
         "context_window": 16385,
         "max_output": 4096
       },
       {
         "id": "gpt-4",
-        "input_price_per_1m": 30.0,
-        "output_price_per_1m": 60.0,
+        "input_price_per_1m": 30,
+        "output_price_per_1m": 60,
         "context_window": 8192,
         "max_output": 4096
       },
       {
         "id": "gpt-4-0125-preview",
-        "input_price_per_1m": 10.0,
-        "output_price_per_1m": 30.0,
+        "input_price_per_1m": 10,
+        "output_price_per_1m": 30,
         "context_window": 128000,
         "max_output": 4096
       },
       {
         "id": "gpt-4-0314",
-        "input_price_per_1m": 30.0,
-        "output_price_per_1m": 60.0,
+        "input_price_per_1m": 30,
+        "output_price_per_1m": 60,
         "context_window": 8192,
-        "max_output": 4096
+        "max_output": 8192
       },
       {
         "id": "gpt-4-0613",
-        "input_price_per_1m": 30.0,
-        "output_price_per_1m": 60.0,
+        "input_price_per_1m": 30,
+        "output_price_per_1m": 60,
         "context_window": 8192,
-        "max_output": 4096
+        "max_output": 8192
       },
       {
         "id": "gpt-4-1106-preview",
-        "input_price_per_1m": 10.0,
-        "output_price_per_1m": 30.0,
+        "input_price_per_1m": 10,
+        "output_price_per_1m": 30,
         "context_window": 128000,
         "max_output": 4096
       },
       {
         "id": "gpt-4-1106-vision-preview",
-        "input_price_per_1m": 10.0,
-        "output_price_per_1m": 30.0,
+        "input_price_per_1m": 10,
+        "output_price_per_1m": 30,
         "context_window": 128000,
         "max_output": 4096
       },
       {
         "id": "gpt-4-32k",
-        "input_price_per_1m": 60.0,
-        "output_price_per_1m": 120.0,
+        "input_price_per_1m": 60,
+        "output_price_per_1m": 120,
         "context_window": 32768,
         "max_output": 4096
       },
       {
         "id": "gpt-4-32k-0314",
-        "input_price_per_1m": 60.0,
-        "output_price_per_1m": 120.0,
+        "input_price_per_1m": 60,
+        "output_price_per_1m": 120,
         "context_window": 32768,
         "max_output": 4096
       },
       {
         "id": "gpt-4-32k-0613",
-        "input_price_per_1m": 60.0,
-        "output_price_per_1m": 120.0,
+        "input_price_per_1m": 60,
+        "output_price_per_1m": 120,
         "context_window": 32768,
         "max_output": 4096
       },
       {
         "id": "gpt-4-turbo",
-        "input_price_per_1m": 10.0,
-        "output_price_per_1m": 30.0,
+        "input_price_per_1m": 10,
+        "output_price_per_1m": 30,
         "context_window": 128000,
         "max_output": 4096
       },
       {
         "id": "gpt-4-turbo-2024-04-09",
-        "input_price_per_1m": 10.0,
-        "output_price_per_1m": 30.0,
+        "input_price_per_1m": 10,
+        "output_price_per_1m": 30,
         "context_window": 128000,
         "max_output": 4096
       },
       {
         "id": "gpt-4-turbo-preview",
-        "input_price_per_1m": 10.0,
-        "output_price_per_1m": 30.0,
+        "input_price_per_1m": 10,
+        "output_price_per_1m": 30,
         "context_window": 128000,
         "max_output": 4096
       },
       {
         "id": "gpt-4-vision-preview",
-        "input_price_per_1m": 10.0,
-        "output_price_per_1m": 30.0,
+        "input_price_per_1m": 10,
+        "output_price_per_1m": 30,
         "context_window": 128000,
         "max_output": 4096
       },
       {
         "id": "gpt-4.1",
-        "input_price_per_1m": 2.0,
-        "output_price_per_1m": 8.0,
+        "input_price_per_1m": 2,
+        "output_price_per_1m": 8,
         "context_window": 1047576,
         "max_output": 32768
       },
       {
         "id": "gpt-4.1-2025-04-14",
-        "input_price_per_1m": 2.0,
-        "output_price_per_1m": 8.0,
+        "input_price_per_1m": 2,
+        "output_price_per_1m": 8,
         "context_window": 1047576,
         "max_output": 32768
       },
@@ -1068,71 +1075,71 @@
       },
       {
         "id": "gpt-4.5-preview",
-        "input_price_per_1m": 75.0,
-        "output_price_per_1m": 150.0,
+        "input_price_per_1m": 75,
+        "output_price_per_1m": 150,
         "context_window": 128000,
         "max_output": 16384
       },
       {
         "id": "gpt-4.5-preview-2025-02-27",
-        "input_price_per_1m": 75.0,
-        "output_price_per_1m": 150.0,
+        "input_price_per_1m": 75,
+        "output_price_per_1m": 150,
         "context_window": 128000,
         "max_output": 16384
       },
       {
         "id": "gpt-4o",
         "input_price_per_1m": 2.5,
-        "output_price_per_1m": 10.0,
+        "output_price_per_1m": 10,
         "context_window": 128000,
         "max_output": 16384
       },
       {
         "id": "gpt-4o-2024-05-13",
-        "input_price_per_1m": 5.0,
-        "output_price_per_1m": 15.0,
+        "input_price_per_1m": 5,
+        "output_price_per_1m": 15,
         "context_window": 128000,
         "max_output": 4096
       },
       {
         "id": "gpt-4o-2024-08-06",
         "input_price_per_1m": 2.5,
-        "output_price_per_1m": 10.0,
+        "output_price_per_1m": 10,
         "context_window": 128000,
         "max_output": 16384
       },
       {
         "id": "gpt-4o-2024-11-20",
         "input_price_per_1m": 2.5,
-        "output_price_per_1m": 10.0,
+        "output_price_per_1m": 10,
         "context_window": 128000,
         "max_output": 16384
       },
       {
         "id": "gpt-4o-audio-preview",
         "input_price_per_1m": 2.5,
-        "output_price_per_1m": 10.0,
+        "output_price_per_1m": 10,
         "context_window": 128000,
         "max_output": 16384
       },
       {
         "id": "gpt-4o-audio-preview-2024-10-01",
         "input_price_per_1m": 2.5,
-        "output_price_per_1m": 10.0,
+        "output_price_per_1m": 10,
         "context_window": 128000,
         "max_output": 16384
       },
       {
         "id": "gpt-4o-audio-preview-2024-12-17",
         "input_price_per_1m": 2.5,
-        "output_price_per_1m": 10.0,
+        "output_price_per_1m": 10,
         "context_window": 128000,
         "max_output": 16384
       },
       {
         "id": "gpt-4o-audio-preview-2025-06-03",
         "input_price_per_1m": 2.5,
-        "output_price_per_1m": 10.0,
+        "output_price_per_1m": 10,
         "context_window": 128000,
         "max_output": 16384
       },
@@ -1194,93 +1201,93 @@
       },
       {
         "id": "gpt-4o-realtime-preview",
-        "input_price_per_1m": 5.0,
-        "output_price_per_1m": 20.0,
+        "input_price_per_1m": 5,
+        "output_price_per_1m": 20,
         "context_window": 128000,
         "max_output": 4096
       },
       {
         "id": "gpt-4o-realtime-preview-2024-10-01",
-        "input_price_per_1m": 5.0,
-        "output_price_per_1m": 20.0,
-        "context_window": 128000,
+        "input_price_per_1m": 5,
+        "output_price_per_1m": 20,
+        "context_window": 16000,
         "max_output": 4096
       },
       {
         "id": "gpt-4o-realtime-preview-2024-12-17",
-        "input_price_per_1m": 5.0,
-        "output_price_per_1m": 20.0,
-        "context_window": 128000,
+        "input_price_per_1m": 5,
+        "output_price_per_1m": 20,
+        "context_window": 16000,
         "max_output": 4096
       },
       {
         "id": "gpt-4o-realtime-preview-2025-06-03",
-        "input_price_per_1m": 5.0,
-        "output_price_per_1m": 20.0,
-        "context_window": 128000,
+        "input_price_per_1m": 5,
+        "output_price_per_1m": 20,
+        "context_window": 32000,
         "max_output": 4096
       },
       {
         "id": "gpt-4o-search-preview",
         "input_price_per_1m": 2.5,
-        "output_price_per_1m": 10.0,
+        "output_price_per_1m": 10,
         "context_window": 128000,
         "max_output": 16384
       },
       {
         "id": "gpt-4o-search-preview-2025-03-11",
         "input_price_per_1m": 2.5,
-        "output_price_per_1m": 10.0,
+        "output_price_per_1m": 10,
         "context_window": 128000,
         "max_output": 16384
       },
       {
         "id": "gpt-5",
         "input_price_per_1m": 1.25,
-        "output_price_per_1m": 10.0,
+        "output_price_per_1m": 10,
         "context_window": 272000,
         "max_output": 128000
       },
       {
         "id": "gpt-5-2025-08-07",
         "input_price_per_1m": 1.25,
-        "output_price_per_1m": 10.0,
-        "context_window": 272000,
+        "output_price_per_1m": 10,
+        "context_window": 400000,
         "max_output": 128000
       },
       {
         "id": "gpt-5-chat",
         "input_price_per_1m": 1.25,
-        "output_price_per_1m": 10.0,
+        "output_price_per_1m": 10,
         "context_window": 128000,
         "max_output": 16384
       },
       {
         "id": "gpt-5-chat-latest",
         "input_price_per_1m": 1.25,
-        "output_price_per_1m": 10.0,
+        "output_price_per_1m": 10,
         "context_window": 128000,
         "max_output": 16384
       },
       {
         "id": "gpt-5-codex",
         "input_price_per_1m": 1.25,
-        "output_price_per_1m": 10.0,
+        "output_price_per_1m": 10,
         "context_window": 272000,
         "max_output": 128000
       },
       {
         "id": "gpt-5-mini",
         "input_price_per_1m": 0.25,
-        "output_price_per_1m": 2.0,
+        "output_price_per_1m": 2,
         "context_window": 272000,
         "max_output": 128000
       },
       {
         "id": "gpt-5-mini-2025-08-07",
         "input_price_per_1m": 0.25,
-        "output_price_per_1m": 2.0,
-        "context_window": 272000,
+        "output_price_per_1m": 2,
+        "context_window": 400000,
         "max_output": 128000
       },
       {
@@ -1294,181 +1301,181 @@
         "id": "gpt-5-nano-2025-08-07",
         "input_price_per_1m": 0.05,
         "output_price_per_1m": 0.4,
-        "context_window": 272000,
+        "context_window": 400000,
         "max_output": 128000
       },
       {
         "id": "gpt-5-pro",
-        "input_price_per_1m": 15.0,
-        "output_price_per_1m": 120.0,
+        "input_price_per_1m": 15,
+        "output_price_per_1m": 120,
         "context_window": 128000,
         "max_output": 272000
       },
       {
         "id": "gpt-5-pro-2025-10-06",
-        "input_price_per_1m": 15.0,
-        "output_price_per_1m": 120.0,
+        "input_price_per_1m": 15,
+        "output_price_per_1m": 120,
         "context_window": 128000,
         "max_output": 272000
       },
       {
         "id": "gpt-5-search-api",
         "input_price_per_1m": 1.25,
-        "output_price_per_1m": 10.0,
+        "output_price_per_1m": 10,
         "context_window": 272000,
         "max_output": 128000
       },
       {
         "id": "gpt-5-search-api-2025-10-14",
         "input_price_per_1m": 1.25,
-        "output_price_per_1m": 10.0,
+        "output_price_per_1m": 10,
         "context_window": 272000,
         "max_output": 128000
       },
       {
         "id": "gpt-5.1",
         "input_price_per_1m": 1.25,
-        "output_price_per_1m": 10.0,
+        "output_price_per_1m": 10,
         "context_window": 272000,
         "max_output": 128000
       },
       {
         "id": "gpt-5.1-2025-11-13",
         "input_price_per_1m": 1.25,
-        "output_price_per_1m": 10.0,
+        "output_price_per_1m": 10,
         "context_window": 272000,
         "max_output": 128000
       },
       {
         "id": "gpt-5.1-chat-latest",
         "input_price_per_1m": 1.25,
-        "output_price_per_1m": 10.0,
+        "output_price_per_1m": 10,
         "context_window": 128000,
         "max_output": 16384
       },
       {
         "id": "gpt-5.1-codex",
         "input_price_per_1m": 1.25,
-        "output_price_per_1m": 10.0,
+        "output_price_per_1m": 10,
         "context_window": 272000,
         "max_output": 128000
       },
       {
         "id": "gpt-5.1-codex-max",
         "input_price_per_1m": 1.25,
-        "output_price_per_1m": 10.0,
+        "output_price_per_1m": 10,
         "context_window": 272000,
         "max_output": 128000
       },
       {
         "id": "gpt-5.1-codex-mini",
         "input_price_per_1m": 0.25,
-        "output_price_per_1m": 2.0,
+        "output_price_per_1m": 2,
         "context_window": 272000,
         "max_output": 128000
       },
       {
         "id": "gpt-5.2",
         "input_price_per_1m": 1.75,
-        "output_price_per_1m": 14.0,
+        "output_price_per_1m": 14,
         "context_window": 272000,
         "max_output": 128000
       },
       {
         "id": "gpt-5.2-2025-12-11",
         "input_price_per_1m": 1.75,
-        "output_price_per_1m": 14.0,
+        "output_price_per_1m": 14,
         "context_window": 272000,
         "max_output": 128000
       },
       {
         "id": "gpt-5.2-chat-latest",
         "input_price_per_1m": 1.75,
-        "output_price_per_1m": 14.0,
+        "output_price_per_1m": 14,
         "context_window": 128000,
         "max_output": 16384
       },
       {
         "id": "gpt-5.2-codex",
         "input_price_per_1m": 1.75,
-        "output_price_per_1m": 14.0,
+        "output_price_per_1m": 14,
         "context_window": 272000,
         "max_output": 128000
       },
       {
         "id": "gpt-5.2-pro",
-        "input_price_per_1m": 21.0,
-        "output_price_per_1m": 168.0,
+        "input_price_per_1m": 21,
+        "output_price_per_1m": 168,
         "context_window": 272000,
         "max_output": 128000
       },
       {
         "id": "gpt-5.2-pro-2025-12-11",
-        "input_price_per_1m": 21.0,
-        "output_price_per_1m": 168.0,
+        "input_price_per_1m": 21,
+        "output_price_per_1m": 168,
         "context_window": 272000,
         "max_output": 128000
       },
       {
         "id": "gpt-5.3-chat-latest",
         "input_price_per_1m": 1.75,
-        "output_price_per_1m": 14.0,
+        "output_price_per_1m": 14,
         "context_window": 128000,
         "max_output": 16384
       },
       {
         "id": "gpt-5.3-codex",
         "input_price_per_1m": 1.75,
-        "output_price_per_1m": 14.0,
+        "output_price_per_1m": 14,
         "context_window": 272000,
         "max_output": 128000
       },
       {
         "id": "gpt-5.4",
         "input_price_per_1m": 2.5,
-        "output_price_per_1m": 15.0,
+        "output_price_per_1m": 15,
         "context_window": 1050000,
         "max_output": 128000
       },
       {
         "id": "gpt-5.4-2026-03-05",
         "input_price_per_1m": 2.5,
-        "output_price_per_1m": 15.0,
+        "output_price_per_1m": 15,
         "context_window": 1050000,
         "max_output": 128000
       },
       {
         "id": "gpt-5.4-pro",
-        "input_price_per_1m": 30.0,
-        "output_price_per_1m": 180.0,
+        "input_price_per_1m": 30,
+        "output_price_per_1m": 180,
         "context_window": 1050000,
         "max_output": 128000
       },
       {
         "id": "gpt-5.4-pro-2026-03-05",
-        "input_price_per_1m": 30.0,
-        "output_price_per_1m": 180.0,
+        "input_price_per_1m": 30,
+        "output_price_per_1m": 180,
         "context_window": 1050000,
         "max_output": 128000
       },
       {
         "id": "gpt-audio",
         "input_price_per_1m": 2.5,
-        "output_price_per_1m": 10.0,
+        "output_price_per_1m": 10,
         "context_window": 128000,
         "max_output": 16384
       },
       {
         "id": "gpt-audio-1.5",
         "input_price_per_1m": 2.5,
-        "output_price_per_1m": 10.0,
+        "output_price_per_1m": 10,
         "context_window": 128000,
         "max_output": 16384
       },
       {
         "id": "gpt-audio-2025-08-28",
         "input_price_per_1m": 2.5,
-        "output_price_per_1m": 10.0,
+        "output_price_per_1m": 10,
         "context_window": 128000,
         "max_output": 16384
       },
@@ -1495,22 +1502,22 @@
       },
       {
         "id": "gpt-realtime",
-        "input_price_per_1m": 4.0,
-        "output_price_per_1m": 16.0,
+        "input_price_per_1m": 4,
+        "output_price_per_1m": 16,
         "context_window": 32000,
         "max_output": 4096
       },
       {
         "id": "gpt-realtime-1.5",
-        "input_price_per_1m": 4.0,
-        "output_price_per_1m": 16.0,
+        "input_price_per_1m": 4,
+        "output_price_per_1m": 16,
         "context_window": 32000,
         "max_output": 4096
       },
       {
         "id": "gpt-realtime-2025-08-28",
-        "input_price_per_1m": 4.0,
-        "output_price_per_1m": 16.0,
+        "input_price_per_1m": 4,
+        "output_price_per_1m": 16,
         "context_window": 32000,
         "max_output": 4096
       },
@@ -1537,15 +1544,15 @@
       },
       {
         "id": "o1",
-        "input_price_per_1m": 15.0,
-        "output_price_per_1m": 60.0,
+        "input_price_per_1m": 15,
+        "output_price_per_1m": 60,
         "context_window": 200000,
         "max_output": 100000
       },
       {
         "id": "o1-2024-12-17",
-        "input_price_per_1m": 15.0,
-        "output_price_per_1m": 60.0,
+        "input_price_per_1m": 15,
+        "output_price_per_1m": 60,
         "context_window": 200000,
         "max_output": 100000
       },
@@ -1558,64 +1565,64 @@
       },
       {
         "id": "o1-mini-2024-09-12",
-        "input_price_per_1m": 3.0,
-        "output_price_per_1m": 12.0,
+        "input_price_per_1m": 1.1,
+        "output_price_per_1m": 4.4,
         "context_window": 128000,
         "max_output": 65536
       },
       {
         "id": "o1-preview",
-        "input_price_per_1m": 15.0,
-        "output_price_per_1m": 60.0,
+        "input_price_per_1m": 15,
+        "output_price_per_1m": 60,
         "context_window": 128000,
         "max_output": 32768
       },
       {
         "id": "o1-preview-2024-09-12",
-        "input_price_per_1m": 15.0,
-        "output_price_per_1m": 60.0,
+        "input_price_per_1m": 15,
+        "output_price_per_1m": 60,
         "context_window": 128000,
         "max_output": 32768
       },
       {
         "id": "o1-pro",
-        "input_price_per_1m": 150.0,
-        "output_price_per_1m": 600.0,
+        "input_price_per_1m": 150,
+        "output_price_per_1m": 600,
         "context_window": 200000,
         "max_output": 100000
       },
       {
         "id": "o1-pro-2025-03-19",
-        "input_price_per_1m": 150.0,
-        "output_price_per_1m": 600.0,
+        "input_price_per_1m": 150,
+        "output_price_per_1m": 600,
         "context_window": 200000,
         "max_output": 100000
       },
       {
         "id": "o3",
-        "input_price_per_1m": 2.0,
-        "output_price_per_1m": 8.0,
+        "input_price_per_1m": 2,
+        "output_price_per_1m": 8,
         "context_window": 200000,
         "max_output": 100000
       },
       {
         "id": "o3-2025-04-16",
-        "input_price_per_1m": 2.0,
-        "output_price_per_1m": 8.0,
+        "input_price_per_1m": 2,
+        "output_price_per_1m": 8,
         "context_window": 200000,
         "max_output": 100000
       },
       {
         "id": "o3-deep-research",
-        "input_price_per_1m": 10.0,
-        "output_price_per_1m": 40.0,
+        "input_price_per_1m": 10,
+        "output_price_per_1m": 40,
         "context_window": 200000,
         "max_output": 100000
       },
       {
         "id": "o3-deep-research-2025-06-26",
-        "input_price_per_1m": 10.0,
-        "output_price_per_1m": 40.0,
+        "input_price_per_1m": 10,
+        "output_price_per_1m": 40,
         "context_window": 200000,
         "max_output": 100000
       },
@@ -1635,15 +1642,15 @@
       },
       {
         "id": "o3-pro",
-        "input_price_per_1m": 20.0,
-        "output_price_per_1m": 80.0,
+        "input_price_per_1m": 20,
+        "output_price_per_1m": 80,
         "context_window": 200000,
         "max_output": 100000
       },
       {
         "id": "o3-pro-2025-06-10",
-        "input_price_per_1m": 20.0,
-        "output_price_per_1m": 80.0,
+        "input_price_per_1m": 20,
+        "output_price_per_1m": 80,
         "context_window": 200000,
         "max_output": 100000
       },
@@ -1663,15 +1670,15 @@
       },
       {
         "id": "o4-mini-deep-research",
-        "input_price_per_1m": 2.0,
-        "output_price_per_1m": 8.0,
+        "input_price_per_1m": 2,
+        "output_price_per_1m": 8,
         "context_window": 200000,
         "max_output": 100000
       },
       {
         "id": "o4-mini-deep-research-2025-06-26",
-        "input_price_per_1m": 2.0,
-        "output_price_per_1m": 8.0,
+        "input_price_per_1m": 2,
+        "output_price_per_1m": 8,
         "context_window": 200000,
         "max_output": 100000
       },
@@ -1681,6 +1688,48 @@
         "output_price_per_1m": 0,
         "context_window": 0,
         "max_output": 0
+      },
+      {
+        "id": "gpt-4o-transcribe",
+        "input_price_per_1m": 0,
+        "output_price_per_1m": 0,
+        "context_window": 16000,
+        "max_output": 2000
+      },
+      {
+        "id": "gpt-5-latest",
+        "input_price_per_1m": 1.25,
+        "output_price_per_1m": 10,
+        "context_window": 0,
+        "max_output": 0
+      },
+      {
+        "id": "computer-use-preview-2025-03-11",
+        "input_price_per_1m": 3,
+        "output_price_per_1m": 12,
+        "context_window": 8192,
+        "max_output": 1024
+      },
+      {
+        "id": "computer-use-preview",
+        "input_price_per_1m": 3,
+        "output_price_per_1m": 12,
+        "context_window": 0,
+        "max_output": 0
+      },
+      {
+        "id": "gpt-3.5-turbo-instruct",
+        "input_price_per_1m": 0,
+        "output_price_per_1m": 0,
+        "context_window": 4096,
+        "max_output": 4096
+      },
+      {
+        "id": "gpt-4o-mini-transcribe",
+        "input_price_per_1m": 0,
+        "output_price_per_1m": 0,
+        "context_window": 16000,
+        "max_output": 2000
       }
     ]
   }

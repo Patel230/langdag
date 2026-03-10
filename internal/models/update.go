@@ -58,7 +58,17 @@ func FetchLatest(ctx context.Context) (*Catalog, error) {
 		return nil, fmt.Errorf("models: failed to read response: %w", err)
 	}
 
-	return parseLiteLLMData(body)
+	catalog, err := parseLiteLLMData(body)
+	if err != nil {
+		return nil, err
+	}
+
+	// Enrich with official provider data (all must succeed)
+	if err := EnrichFromProviders(ctx, catalog); err != nil {
+		return nil, fmt.Errorf("models: %w", err)
+	}
+
+	return catalog, nil
 }
 
 // parseLiteLLMData converts LiteLLM JSON data into a Catalog.
