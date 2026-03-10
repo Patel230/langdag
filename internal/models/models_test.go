@@ -2,7 +2,6 @@ package models
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -16,8 +15,8 @@ func TestDefaultCatalog(t *testing.T) {
 		t.Fatalf("DefaultCatalog() error: %v", err)
 	}
 
-	if catalog.Source != "litellm" {
-		t.Errorf("Source = %q, want %q", catalog.Source, "litellm")
+	if catalog.Source != "providers" {
+		t.Errorf("Source = %q, want %q", catalog.Source, "providers")
 	}
 
 	expectedProviders := []string{"anthropic", "openai", "gemini", "grok"}
@@ -36,15 +35,13 @@ func TestDefaultCatalog_KnownModels(t *testing.T) {
 	}
 
 	tests := []struct {
-		modelID        string
-		wantProvider   string
-		wantInputGt0   bool
-		wantCtxWindow  int
+		modelID      string
+		wantProvider string
+		wantInputGt0 bool
+		wantCtxGt0   bool
 	}{
-		{"claude-sonnet-4-20250514", "anthropic", true, 0},
-		{"gpt-4o", "openai", true, 128000},
-		{"gemini-2.5-flash", "gemini", true, 0},
-		{"grok-3", "grok", true, 131072},
+		{"gpt-4o-2024-08-06", "openai", true, true},
+		{"grok-3", "grok", true, true},
 	}
 
 	for _, tt := range tests {
@@ -59,11 +56,8 @@ func TestDefaultCatalog_KnownModels(t *testing.T) {
 			if tt.wantInputGt0 && m.InputPricePer1M <= 0 {
 				t.Errorf("InputPricePer1M = %f, want > 0", m.InputPricePer1M)
 			}
-			if tt.wantCtxWindow > 0 && m.ContextWindow != tt.wantCtxWindow {
-				t.Errorf("ContextWindow = %d, want %d", m.ContextWindow, tt.wantCtxWindow)
-			}
-			if m.MaxOutput <= 0 {
-				t.Errorf("MaxOutput = %d, want > 0", m.MaxOutput)
+			if tt.wantCtxGt0 && m.ContextWindow <= 0 {
+				t.Errorf("ContextWindow = %d, want > 0", m.ContextWindow)
 			}
 		})
 	}
@@ -107,8 +101,8 @@ func TestLoadCatalog_FallsBackToDefault(t *testing.T) {
 		t.Fatalf("LoadCatalog() error: %v", err)
 	}
 
-	if catalog.Source != "litellm" {
-		t.Errorf("Source = %q, want %q", catalog.Source, "litellm")
+	if catalog.Source != "providers" {
+		t.Errorf("Source = %q, want %q", catalog.Source, "providers")
 	}
 }
 
@@ -191,178 +185,69 @@ func TestLoadCatalog_InvalidCacheFallsBack(t *testing.T) {
 		t.Fatalf("LoadCatalog() error: %v", err)
 	}
 
-	if catalog.Source != "litellm" {
-		t.Errorf("Source = %q, want %q (should fall back to default)", catalog.Source, "litellm")
-	}
-}
-
-func TestParseLiteLLMData(t *testing.T) {
-	// Minimal LiteLLM-format test data
-	testData := map[string]interface{}{
-		"claude-sonnet-4-6": map[string]interface{}{
-			"litellm_provider":      "anthropic",
-			"mode":                  "chat",
-			"input_cost_per_token":  0.000003,
-			"output_cost_per_token": 0.000015,
-			"max_input_tokens":      200000,
-			"max_output_tokens":     64000,
-		},
-		"gpt-4o": map[string]interface{}{
-			"litellm_provider":      "openai",
-			"mode":                  "chat",
-			"input_cost_per_token":  0.0000025,
-			"output_cost_per_token": 0.00001,
-			"max_input_tokens":      128000,
-			"max_output_tokens":     16384,
-		},
-		"gemini/gemini-2.5-flash": map[string]interface{}{
-			"litellm_provider":      "gemini",
-			"mode":                  "chat",
-			"input_cost_per_token":  0.0000003,
-			"output_cost_per_token": 0.0000025,
-			"max_input_tokens":      1048576,
-			"max_output_tokens":     65535,
-		},
-		"xai/grok-3": map[string]interface{}{
-			"litellm_provider":      "xai",
-			"mode":                  "chat",
-			"input_cost_per_token":  0.000003,
-			"output_cost_per_token": 0.000015,
-			"max_input_tokens":      131072,
-			"max_output_tokens":     131072,
-		},
-		// Should be filtered out: wrong mode
-		"text-embedding-3-small": map[string]interface{}{
-			"litellm_provider":      "openai",
-			"mode":                  "embedding",
-			"input_cost_per_token":  0.00000002,
-			"output_cost_per_token": 0.0,
-			"max_input_tokens":      8191,
-			"max_output_tokens":     0,
-		},
-		// Should be filtered out: unsupported provider
-		"mistral-large-latest": map[string]interface{}{
-			"litellm_provider":      "mistral",
-			"mode":                  "chat",
-			"input_cost_per_token":  0.000002,
-			"output_cost_per_token": 0.000006,
-			"max_input_tokens":      128000,
-			"max_output_tokens":     8192,
-		},
-	}
-
-	data, err := json.Marshal(testData)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	catalog, err := parseLiteLLMData(data)
-	if err != nil {
-		t.Fatalf("parseLiteLLMData() error: %v", err)
-	}
-
-	// Check we have exactly 4 providers
-	if len(catalog.Providers) != 4 {
-		t.Errorf("got %d providers, want 4", len(catalog.Providers))
-	}
-
-	// Verify Anthropic
-	anthropic := catalog.ForProvider("anthropic")
-	if len(anthropic) != 1 {
-		t.Fatalf("anthropic: got %d models, want 1", len(anthropic))
-	}
-	if anthropic[0].ID != "claude-sonnet-4-6" {
-		t.Errorf("anthropic model ID = %q, want %q", anthropic[0].ID, "claude-sonnet-4-6")
-	}
-	if anthropic[0].InputPricePer1M != 3.0 {
-		t.Errorf("InputPricePer1M = %f, want 3.0", anthropic[0].InputPricePer1M)
-	}
-	if anthropic[0].OutputPricePer1M != 15.0 {
-		t.Errorf("OutputPricePer1M = %f, want 15.0", anthropic[0].OutputPricePer1M)
-	}
-
-	// Verify Gemini prefix was stripped
-	gemini := catalog.ForProvider("gemini")
-	if len(gemini) != 1 {
-		t.Fatalf("gemini: got %d models, want 1", len(gemini))
-	}
-	if gemini[0].ID != "gemini-2.5-flash" {
-		t.Errorf("gemini model ID = %q, want %q (prefix should be stripped)", gemini[0].ID, "gemini-2.5-flash")
-	}
-
-	// Verify xAI prefix was stripped and mapped to "grok"
-	grok := catalog.ForProvider("grok")
-	if len(grok) != 1 {
-		t.Fatalf("grok: got %d models, want 1", len(grok))
-	}
-	if grok[0].ID != "grok-3" {
-		t.Errorf("grok model ID = %q, want %q (prefix should be stripped)", grok[0].ID, "grok-3")
-	}
-
-	// Verify embedding model was filtered out
-	for _, models := range catalog.Providers {
-		for _, m := range models {
-			if m.ID == "text-embedding-3-small" {
-				t.Error("embedding model should have been filtered out")
-			}
-		}
-	}
-
-	// Verify mistral was filtered out
-	if catalog.ForProvider("mistral") != nil {
-		t.Error("mistral provider should not be present")
+	if catalog.Source != "providers" {
+		t.Errorf("Source = %q, want %q (should fall back to default)", catalog.Source, "providers")
 	}
 }
 
 func TestFetchLatest(t *testing.T) {
-	// Create a test server with minimal LiteLLM-format data
-	testData := map[string]interface{}{
-		"claude-sonnet-4-6": map[string]interface{}{
-			"litellm_provider":      "anthropic",
-			"mode":                  "chat",
-			"input_cost_per_token":  0.000003,
-			"output_cost_per_token": 0.000015,
-			"max_input_tokens":      200000,
-			"max_output_tokens":     64000,
-		},
-	}
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(testData)
-	}))
-	defer server.Close()
-
 	openAIServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("## Text tokens\n\n| Name | Input | Cached input | Output | Unit |\n| --- | --- | --- | --- | --- |\n| gpt-4o | 2.5 | 1.25 | 10 | 1M tokens |\n"))
+		w.Write([]byte(`# Models
+
+### gpt-4o-2024-08-06
+
+- Context window size: 128000
+- Maximum output tokens: 16384
+
+## Text tokens
+
+| Name | Input | Cached input | Output | Unit |
+| --- | --- | --- | --- | --- |
+| gpt-4o | 2.5 | 1.25 | 10 | 1M tokens |
+| gpt-4o-2024-08-06 | 2.5 | 1.25 | 10 | 1M tokens |
+`))
 	}))
 	defer openAIServer.Close()
+
 	anthropicServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`<table><tr><th>Feature</th><th>Model</th></tr><tr><td>Claude API ID</td><td>claude-sonnet-4-6</td></tr><tr><td>Pricing</td><td>$3 / input MTok $15 / output MTok</td></tr><tr><td>Context window</td><td>200K tokens</td></tr><tr><td>Max output</td><td>64K tokens</td></tr></table>`))
+		w.Write([]byte(`<table>
+<tr><th>Feature</th><th>Model</th></tr>
+<tr><td>Claude API ID</td><td>claude-sonnet-4-6</td></tr>
+<tr><td>Pricing</td><td>$3 / input MTok $15 / output MTok</td></tr>
+<tr><td>Context window</td><td>200K tokens</td></tr>
+<tr><td>Max output</td><td>64K tokens</td></tr>
+</table>`))
 	}))
 	defer anthropicServer.Close()
-	geminiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
+	// Gemini: pricing page + spec page
+	geminiMux := http.NewServeMux()
+	geminiMux.HandleFunc("/pricing", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`<h3>Gemini 2.5 Flash</h3><p>Input price $0.30</p><p>Output price $2.50</p>`))
-	}))
+	})
+	geminiMux.HandleFunc("/models/gemini-2.5-flash", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`<html>Input token limit 1,048,576 Output token limit 65,536</html>`))
+	})
+	geminiServer := httptest.NewServer(geminiMux)
 	defer geminiServer.Close()
+
 	grokServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`\"name\":\"grok-3\",\"promptTextTokenPrice\":\"$n30000\",\"completionTextTokenPrice\":\"$n150000\",\"maxPromptLength\":131072`))
 	}))
 	defer grokServer.Close()
 
-	// Override the URL for testing
-	origURL := fetchURL
-	origOpenAI, origAnthropic, origGemini, origGrok := openAISourceURL, anthropicSourceURL, geminiSourceURL, grokSourceURL
+	origOpenAI, origAnthropic, origGemini, origGeminiSpec, origGrok := openAISourceURL, anthropicSourceURL, geminiSourceURL, geminiSpecBaseURL, grokSourceURL
 	defer func() {
-		setLiteLLMURL(origURL)
 		openAISourceURL = origOpenAI
 		anthropicSourceURL = origAnthropic
 		geminiSourceURL = origGemini
+		geminiSpecBaseURL = origGeminiSpec
 		grokSourceURL = origGrok
 	}()
-	setLiteLLMURL(server.URL)
 	openAISourceURL = openAIServer.URL
 	anthropicSourceURL = anthropicServer.URL
-	geminiSourceURL = geminiServer.URL
+	geminiSourceURL = geminiServer.URL + "/pricing"
+	geminiSpecBaseURL = geminiServer.URL + "/models"
 	grokSourceURL = grokServer.URL
 
 	catalog, err := FetchLatest(context.Background())
@@ -370,28 +255,144 @@ func TestFetchLatest(t *testing.T) {
 		t.Fatalf("FetchLatest() error: %v", err)
 	}
 
-	if catalog.Source != "litellm" {
-		t.Errorf("Source = %q, want %q", catalog.Source, "litellm")
+	if catalog.Source != "providers" {
+		t.Errorf("Source = %q, want %q", catalog.Source, "providers")
 	}
 
-	anthropic := catalog.ForProvider("anthropic")
-	if len(anthropic) != 1 {
-		t.Fatalf("anthropic: got %d models, want 1", len(anthropic))
+	// Check at least one model per provider
+	for _, p := range []string{"openai", "anthropic", "gemini", "grok"} {
+		if len(catalog.ForProvider(p)) == 0 {
+			t.Errorf("no models for provider %q", p)
+		}
+	}
+
+	// gpt-4o-2024-08-06 should have full data (pricing + context from same file)
+	m, _, ok := catalog.LookupModel("gpt-4o-2024-08-06")
+	if !ok {
+		t.Fatal("gpt-4o-2024-08-06 not found")
+	}
+	if m.InputPricePer1M != 2.5 {
+		t.Errorf("gpt-4o input = %f, want 2.5", m.InputPricePer1M)
+	}
+	if m.ContextWindow != 128000 {
+		t.Errorf("gpt-4o context = %d, want 128000", m.ContextWindow)
+	}
+
+	// gpt-4o has pricing but no context window → should be filtered out
+	_, _, ok = catalog.LookupModel("gpt-4o")
+	if ok {
+		t.Error("gpt-4o should be filtered out (no context window)")
+	}
+
+	// Gemini model should have spec data from spec page
+	gm, _, ok := catalog.LookupModel("gemini-2.5-flash")
+	if !ok {
+		t.Fatal("gemini-2.5-flash not found")
+	}
+	if gm.ContextWindow != 1048576 {
+		t.Errorf("gemini context = %d, want 1048576", gm.ContextWindow)
+	}
+	if gm.MaxOutput != 65536 {
+		t.Errorf("gemini maxOutput = %d, want 65536", gm.MaxOutput)
+	}
+}
+
+func TestFetchLatest_FiltersIncomplete(t *testing.T) {
+	// Models without context window or pricing should be filtered
+	openAIServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`### gpt-4o-2024-08-06
+
+- Context window size: 128000
+- Maximum output tokens: 16384
+
+## Text tokens
+
+| Name | Input | Cached input | Output | Unit |
+| --- | --- | --- | --- | --- |
+| gpt-4o-2024-08-06 | 2.5 | 1.25 | 10 | 1M tokens |
+| gpt-4o | 2.5 | 1.25 | 10 | 1M tokens |
+`))
+	}))
+	defer openAIServer.Close()
+
+	anthropicServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`<table>
+<tr><th>Feature</th><th>Model</th></tr>
+<tr><td>Claude API ID</td><td>claude-sonnet-4-6</td></tr>
+<tr><td>Pricing</td><td>$3 / input MTok $15 / output MTok</td></tr>
+<tr><td>Context window</td><td>200K tokens</td></tr>
+<tr><td>Max output</td><td>64K tokens</td></tr>
+</table>`))
+	}))
+	defer anthropicServer.Close()
+
+	geminiMux := http.NewServeMux()
+	geminiMux.HandleFunc("/pricing", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`<h3>Gemini 2.5 Flash</h3><p>Input price $0.30</p><p>Output price $2.50</p>`))
+	})
+	geminiMux.HandleFunc("/models/gemini-2.5-flash", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`<html>Input token limit 1,048,576 Output token limit 65,536</html>`))
+	})
+	geminiServer := httptest.NewServer(geminiMux)
+	defer geminiServer.Close()
+
+	grokServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`\"name\":\"grok-3\",\"promptTextTokenPrice\":\"$n30000\",\"completionTextTokenPrice\":\"$n150000\",\"maxPromptLength\":131072`))
+	}))
+	defer grokServer.Close()
+
+	origOpenAI, origAnthropic, origGemini, origGeminiSpec, origGrok := openAISourceURL, anthropicSourceURL, geminiSourceURL, geminiSpecBaseURL, grokSourceURL
+	defer func() {
+		openAISourceURL = origOpenAI
+		anthropicSourceURL = origAnthropic
+		geminiSourceURL = origGemini
+		geminiSpecBaseURL = origGeminiSpec
+		grokSourceURL = origGrok
+	}()
+	openAISourceURL = openAIServer.URL
+	anthropicSourceURL = anthropicServer.URL
+	geminiSourceURL = geminiServer.URL + "/pricing"
+	geminiSpecBaseURL = geminiServer.URL + "/models"
+	grokSourceURL = grokServer.URL
+
+	catalog, err := FetchLatest(context.Background())
+	if err != nil {
+		t.Fatalf("FetchLatest() error: %v", err)
+	}
+
+	// All models should have both pricing and context window
+	for provider, models := range catalog.Providers {
+		for _, m := range models {
+			if m.InputPricePer1M <= 0 && m.OutputPricePer1M <= 0 {
+				t.Errorf("%s/%s: missing pricing", provider, m.ID)
+			}
+			if m.ContextWindow <= 0 {
+				t.Errorf("%s/%s: missing context window", provider, m.ID)
+			}
+		}
 	}
 }
 
 func TestFetchLatest_ServerError(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	errorServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
-	defer server.Close()
+	defer errorServer.Close()
 
-	origURL := fetchURL
-	defer func() { setLiteLLMURL(origURL) }()
-	setLiteLLMURL(server.URL)
+	origOpenAI, origAnthropic, origGemini, origGrok := openAISourceURL, anthropicSourceURL, geminiSourceURL, grokSourceURL
+	defer func() {
+		openAISourceURL = origOpenAI
+		anthropicSourceURL = origAnthropic
+		geminiSourceURL = origGemini
+		grokSourceURL = origGrok
+	}()
+	openAISourceURL = errorServer.URL
+	anthropicSourceURL = errorServer.URL
+	geminiSourceURL = errorServer.URL
+	grokSourceURL = errorServer.URL
 
 	_, err := FetchLatest(context.Background())
 	if err == nil {
-		t.Error("expected error for server error response")
+		t.Error("expected error when providers fail")
 	}
 }

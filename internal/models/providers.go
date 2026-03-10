@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 )
 
 // Source URLs for official provider data (variables for testability).
@@ -17,109 +16,9 @@ var (
 	openAISourceURL    = "https://cdn.openai.com/API/docs/txt/llms-models-pricing.txt"
 	anthropicSourceURL = "https://platform.claude.com/docs/en/docs/about-claude/models"
 	geminiSourceURL    = "https://ai.google.dev/pricing"
+	geminiSpecBaseURL  = "https://ai.google.dev/gemini-api/docs/models"
 	grokSourceURL      = "https://docs.x.ai/docs/models"
 )
-
-// EnrichFromProviders fetches model data from official provider sources
-// and overrides catalog entries where official data is available.
-// All provider fetches must succeed; if any fails, the catalog is left
-// unchanged and an error is returned.
-func EnrichFromProviders(ctx context.Context, catalog *Catalog) error {
-	if catalog == nil || catalog.Providers == nil {
-		return nil
-	}
-
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-
-	type result struct {
-		provider string
-		models   []ModelPricing
-		err      error
-	}
-
-	type fetcher struct {
-		provider string
-		fn       func(context.Context) ([]ModelPricing, error)
-	}
-
-	fetchers := []fetcher{
-		{"openai", fetchOpenAIModels},
-		{"anthropic", fetchAnthropicModels},
-		{"gemini", fetchGeminiModels},
-		{"grok", fetchGrokModels},
-	}
-
-	results := make([]result, len(fetchers))
-	var wg sync.WaitGroup
-	for i, f := range fetchers {
-		wg.Add(1)
-		go func(i int, f fetcher) {
-			defer wg.Done()
-			models, err := f.fn(ctx)
-			results[i] = result{provider: f.provider, models: models, err: err}
-		}(i, f)
-	}
-	wg.Wait()
-
-	// If any provider failed, return error without modifying the catalog
-	var errs []string
-	for _, r := range results {
-		if r.err != nil {
-			errs = append(errs, fmt.Sprintf("%s: %v", r.provider, r.err))
-		} else if len(r.models) == 0 {
-			errs = append(errs, fmt.Sprintf("%s: no models found", r.provider))
-		}
-	}
-	if len(errs) > 0 {
-		return fmt.Errorf("provider enrichment failed: %s", strings.Join(errs, "; "))
-	}
-
-	// All succeeded — apply overrides
-	for _, r := range results {
-		overrideProvider(catalog, r.provider, r.models)
-	}
-	return nil
-}
-
-// overrideProvider merges official data into the catalog for a provider.
-// Non-zero fields from overrides replace existing values.
-// Models not in the catalog are added.
-func overrideProvider(catalog *Catalog, provider string, overrides []ModelPricing) {
-	existing := catalog.Providers[provider]
-
-	overrideMap := make(map[string]ModelPricing, len(overrides))
-	for _, m := range overrides {
-		overrideMap[m.ID] = m
-	}
-
-	for i, m := range existing {
-		o, ok := overrideMap[m.ID]
-		if !ok {
-			continue
-		}
-		if o.InputPricePer1M > 0 {
-			existing[i].InputPricePer1M = o.InputPricePer1M
-		}
-		if o.OutputPricePer1M > 0 {
-			existing[i].OutputPricePer1M = o.OutputPricePer1M
-		}
-		if o.ContextWindow > 0 {
-			existing[i].ContextWindow = o.ContextWindow
-		}
-		if o.MaxOutput > 0 {
-			existing[i].MaxOutput = o.MaxOutput
-		}
-		delete(overrideMap, m.ID)
-	}
-
-	for _, m := range overrideMap {
-		if m.ID != "" {
-			existing = append(existing, m)
-		}
-	}
-	catalog.Providers[provider] = existing
-}
 
 // --- Shared helpers ---
 
@@ -425,14 +324,48 @@ func parseAnthropicTable(rows [][]string) []ModelPricing {
 // --- Gemini ---
 
 func fetchGeminiModels(ctx context.Context) ([]ModelPricing, error) {
+	// Step 1: Get pricing from pricing page
 	body, err := providerHTTPGet(ctx, geminiSourceURL)
 	if err != nil {
 		return nil, err
 	}
-	return parseGeminiHTML(body)
+	models, err := parseGeminiHTML(body)
+	if err != nil {
+		return nil, err
+	}
+
+	// Step 2: Fetch spec pages concurrently for context window + max output
+	var wg sync.WaitGroup
+	for i := range models {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			specURL := geminiSpecBaseURL + "/" + models[i].ID
+			specBody, err := providerHTTPGet(ctx, specURL)
+			if err != nil {
+				return // spec page not available; leave fields as zero
+			}
+			ctxWin, maxOut := parseGeminiSpecPage(specBody)
+			if ctxWin > 0 {
+				models[i].ContextWindow = ctxWin
+			}
+			if maxOut > 0 {
+				models[i].MaxOutput = maxOut
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	return models, nil
 }
 
 var geminiModelRe = regexp.MustCompile(`(?i)Gemini\s+([\d.]+)\s+([\w-]+)`)
+
+// geminiSkipVariants are model variant names that are not text LLMs.
+var geminiSkipVariants = map[string]bool{
+	"nano": true, "embeddings": true, "embedding": true,
+	"computer": true, "deep": true, "robotics": true,
+}
 
 func parseGeminiHTML(html string) ([]ModelPricing, error) {
 	text := stripHTMLTags(html)
@@ -450,14 +383,14 @@ func parseGeminiHTML(html string) ([]ModelPricing, error) {
 		version := name[1]
 		variant := strings.ToLower(name[2])
 
-		// Skip non-LLM models
-		if variant == "nano" || variant == "embeddings" || variant == "embedding" {
+		if geminiSkipVariants[variant] {
 			continue
 		}
-		// Check if "Image" or "TTS" follows immediately (image/audio generation variant)
+
+		// Check text after the match for non-LLM suffixes
 		afterMatch := ""
 		if indices[i][1] < len(text) {
-			end := indices[i][1] + 20
+			end := indices[i][1] + 40
 			if end > len(text) {
 				end = len(text)
 			}
@@ -468,6 +401,12 @@ func parseGeminiHTML(html string) ([]ModelPricing, error) {
 		}
 
 		modelID := "gemini-" + version + "-" + variant
+		// Append "-preview" if the heading includes "Preview"
+		afterLower := strings.ToLower(afterMatch)
+		if strings.HasPrefix(afterLower, "preview") || strings.HasPrefix(afterLower, "- preview") {
+			modelID += "-preview"
+		}
+
 		if seen[modelID] {
 			continue
 		}
@@ -498,6 +437,29 @@ func parseGeminiHTML(html string) ([]ModelPricing, error) {
 		return nil, fmt.Errorf("no pricing found in Gemini HTML")
 	}
 	return models, nil
+}
+
+var (
+	geminiInputLimitRe  = regexp.MustCompile(`(?i)Input\s+token\s+limit\D+([\d,]+)`)
+	geminiOutputLimitRe = regexp.MustCompile(`(?i)Output\s+token\s+limit\D+([\d,]+)`)
+)
+
+// parseGeminiSpecPage extracts token limits from a Gemini model documentation page.
+func parseGeminiSpecPage(html string) (contextWindow int, maxOutput int) {
+	text := stripHTMLTags(html)
+	if m := geminiInputLimitRe.FindStringSubmatch(text); m != nil {
+		contextWindow = parseCommaNumber(m[1])
+	}
+	if m := geminiOutputLimitRe.FindStringSubmatch(text); m != nil {
+		maxOutput = parseCommaNumber(m[1])
+	}
+	return
+}
+
+func parseCommaNumber(s string) int {
+	s = strings.ReplaceAll(s, ",", "")
+	v, _ := strconv.Atoi(s)
+	return v
 }
 
 // findFirstPrice finds the first dollar amount near a keyword in a text section.

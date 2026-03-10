@@ -1,77 +1,8 @@
 package models
 
 import (
-	"context"
-	"net/http"
-	"net/http/httptest"
 	"testing"
 )
-
-func TestOverrideProvider(t *testing.T) {
-	catalog := &Catalog{
-		Providers: map[string][]ModelPricing{
-			"test": {
-				{ID: "model-a", InputPricePer1M: 1.0, OutputPricePer1M: 2.0, ContextWindow: 1000, MaxOutput: 500},
-				{ID: "model-b", InputPricePer1M: 3.0, OutputPricePer1M: 6.0, ContextWindow: 2000, MaxOutput: 1000},
-			},
-		},
-	}
-
-	overrides := []ModelPricing{
-		// Override pricing for model-a, leave context/output unchanged
-		{ID: "model-a", InputPricePer1M: 1.5, OutputPricePer1M: 2.5},
-		// Override context for model-b only
-		{ID: "model-b", ContextWindow: 4000},
-		// New model not in catalog
-		{ID: "model-c", InputPricePer1M: 5.0, OutputPricePer1M: 10.0, ContextWindow: 8000, MaxOutput: 2000},
-	}
-
-	overrideProvider(catalog, "test", overrides)
-
-	models := catalog.ForProvider("test")
-	if len(models) != 3 {
-		t.Fatalf("got %d models, want 3", len(models))
-	}
-
-	// Find each model
-	byID := make(map[string]ModelPricing)
-	for _, m := range models {
-		byID[m.ID] = m
-	}
-
-	// model-a: pricing overridden, context/output unchanged
-	a := byID["model-a"]
-	if a.InputPricePer1M != 1.5 {
-		t.Errorf("model-a input = %f, want 1.5", a.InputPricePer1M)
-	}
-	if a.OutputPricePer1M != 2.5 {
-		t.Errorf("model-a output = %f, want 2.5", a.OutputPricePer1M)
-	}
-	if a.ContextWindow != 1000 {
-		t.Errorf("model-a context = %d, want 1000 (unchanged)", a.ContextWindow)
-	}
-	if a.MaxOutput != 500 {
-		t.Errorf("model-a maxOutput = %d, want 500 (unchanged)", a.MaxOutput)
-	}
-
-	// model-b: only context overridden
-	b := byID["model-b"]
-	if b.InputPricePer1M != 3.0 {
-		t.Errorf("model-b input = %f, want 3.0 (unchanged)", b.InputPricePer1M)
-	}
-	if b.ContextWindow != 4000 {
-		t.Errorf("model-b context = %d, want 4000", b.ContextWindow)
-	}
-
-	// model-c: added new
-	c := byID["model-c"]
-	if c.InputPricePer1M != 5.0 {
-		t.Errorf("model-c input = %f, want 5.0", c.InputPricePer1M)
-	}
-	if c.ContextWindow != 8000 {
-		t.Errorf("model-c context = %d, want 8000", c.ContextWindow)
-	}
-}
 
 func TestParseOpenAIText(t *testing.T) {
 	text := `# GPT-4o
@@ -303,7 +234,6 @@ duplicate \"name\":\"grok-3\",\"version\":\"1.0\",\"promptTextTokenPrice\":\"$n3
 }
 
 func TestParseGeminiHTML(t *testing.T) {
-	// Simulate stripped HTML text content
 	html := `<html><body>
 <h3>Gemini 2.5 Pro</h3>
 <p>Input price $1.25</p>
@@ -316,6 +246,14 @@ func TestParseGeminiHTML(t *testing.T) {
 <h3>Gemini 2.5 Flash-Lite</h3>
 <p>Input price $0.10</p>
 <p>Output price $0.40</p>
+
+<h3>Gemini 3.1 Pro Preview</h3>
+<p>Input price $2.00</p>
+<p>Output price $12.00</p>
+
+<h3>Gemini 3 Flash Preview</h3>
+<p>Input price $0.50</p>
+<p>Output price $3.00</p>
 
 <h3>Gemini 2.5 Flash Image</h3>
 <p>Output price $30.00</p>
@@ -361,159 +299,65 @@ func TestParseGeminiHTML(t *testing.T) {
 		}
 	}
 
+	// Preview models should have "-preview" suffix
+	if m, ok := byID["gemini-3.1-pro-preview"]; !ok {
+		t.Error("gemini-3.1-pro-preview not found")
+	} else {
+		if m.InputPricePer1M != 2.0 {
+			t.Errorf("input = %f, want 2.0", m.InputPricePer1M)
+		}
+		if m.OutputPricePer1M != 12.0 {
+			t.Errorf("output = %f, want 12.0", m.OutputPricePer1M)
+		}
+	}
+
+	if _, ok := byID["gemini-3-flash-preview"]; !ok {
+		t.Error("gemini-3-flash-preview not found")
+	}
+
 	// Image model should be skipped
 	if _, ok := byID["gemini-2.5-flash-image"]; ok {
 		t.Error("image model should be filtered")
 	}
 }
 
-func TestEnrichFromProviders_AllSucceed(t *testing.T) {
-	openAIServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`## Text tokens
+func TestParseGeminiSpecPage(t *testing.T) {
+	html := `<html><body>
+<dt>Model code</dt><dd>gemini-2.5-flash</dd>
+<dt>Input token limit</dt><dd>1,048,576</dd>
+<dt>Output token limit</dt><dd>65,536</dd>
+</body></html>`
 
-| Name | Input | Cached input | Output | Unit |
-| --- | --- | --- | --- | --- |
-| gpt-4o | 2.5 | 1.25 | 10 | 1M tokens |
-`))
-	}))
-	defer openAIServer.Close()
-
-	anthropicServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`<table>
-<tr><th>Feature</th><th>Claude Opus 4.6</th></tr>
-<tr><td>Claude API ID</td><td>claude-opus-4-6</td></tr>
-<tr><td>Pricing</td><td>$5 / input MTok $25 / output MTok</td></tr>
-<tr><td>Context window</td><td>200K tokens</td></tr>
-<tr><td>Max output</td><td>128K tokens</td></tr>
-</table>`))
-	}))
-	defer anthropicServer.Close()
-
-	geminiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`<h3>Gemini 2.5 Flash</h3><p>Input price $0.30</p><p>Output price $2.50</p>`))
-	}))
-	defer geminiServer.Close()
-
-	grokServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`\"name\":\"grok-3\",\"promptTextTokenPrice\":\"$n30000\",\"completionTextTokenPrice\":\"$n150000\",\"maxPromptLength\":131072`))
-	}))
-	defer grokServer.Close()
-
-	origOpenAI, origAnthropic, origGemini, origGrok := openAISourceURL, anthropicSourceURL, geminiSourceURL, grokSourceURL
-	defer func() {
-		openAISourceURL = origOpenAI
-		anthropicSourceURL = origAnthropic
-		geminiSourceURL = origGemini
-		grokSourceURL = origGrok
-	}()
-	openAISourceURL = openAIServer.URL
-	anthropicSourceURL = anthropicServer.URL
-	geminiSourceURL = geminiServer.URL
-	grokSourceURL = grokServer.URL
-
-	catalog := &Catalog{
-		Source: "litellm",
-		Providers: map[string][]ModelPricing{
-			"openai": {
-				{ID: "gpt-4o", InputPricePer1M: 2.0, OutputPricePer1M: 8.0, ContextWindow: 128000, MaxOutput: 16384},
-			},
-			"grok": {
-				{ID: "grok-3", InputPricePer1M: 0, OutputPricePer1M: 0, ContextWindow: 0, MaxOutput: 0},
-			},
-		},
+	ctx, maxOut := parseGeminiSpecPage(html)
+	if ctx != 1048576 {
+		t.Errorf("contextWindow = %d, want 1048576", ctx)
 	}
-
-	if err := EnrichFromProviders(context.Background(), catalog); err != nil {
-		t.Fatalf("EnrichFromProviders() error: %v", err)
-	}
-
-	// OpenAI should be overridden
-	for _, m := range catalog.ForProvider("openai") {
-		if m.ID == "gpt-4o" {
-			if m.InputPricePer1M != 2.5 {
-				t.Errorf("gpt-4o input = %f, want 2.5 (overridden)", m.InputPricePer1M)
-			}
-			if m.OutputPricePer1M != 10 {
-				t.Errorf("gpt-4o output = %f, want 10 (overridden)", m.OutputPricePer1M)
-			}
-			if m.ContextWindow != 128000 {
-				t.Errorf("gpt-4o context = %d, want 128000 (unchanged)", m.ContextWindow)
-			}
-		}
-	}
-
-	// Grok should be enriched
-	for _, m := range catalog.ForProvider("grok") {
-		if m.ID == "grok-3" {
-			if m.InputPricePer1M != 3.0 {
-				t.Errorf("grok-3 input = %f, want 3.0", m.InputPricePer1M)
-			}
-			if m.ContextWindow != 131072 {
-				t.Errorf("grok-3 context = %d, want 131072", m.ContextWindow)
-			}
-		}
+	if maxOut != 65536 {
+		t.Errorf("maxOutput = %d, want 65536", maxOut)
 	}
 }
 
-func TestEnrichFromProviders_PartialFailure(t *testing.T) {
-	openAIServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`## Text tokens
-
-| Name | Input | Cached input | Output | Unit |
-| --- | --- | --- | --- | --- |
-| gpt-4o | 2.5 | 1.25 | 10 | 1M tokens |
-`))
-	}))
-	defer openAIServer.Close()
-
-	errorServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-	}))
-	defer errorServer.Close()
-
-	origOpenAI, origAnthropic, origGemini, origGrok := openAISourceURL, anthropicSourceURL, geminiSourceURL, grokSourceURL
-	defer func() {
-		openAISourceURL = origOpenAI
-		anthropicSourceURL = origAnthropic
-		geminiSourceURL = origGemini
-		grokSourceURL = origGrok
-	}()
-	openAISourceURL = openAIServer.URL
-	anthropicSourceURL = errorServer.URL // fails
-	geminiSourceURL = errorServer.URL    // fails
-	grokSourceURL = errorServer.URL      // fails
-
-	catalog := &Catalog{
-		Source: "litellm",
-		Providers: map[string][]ModelPricing{
-			"openai": {
-				{ID: "gpt-4o", InputPricePer1M: 2.0, OutputPricePer1M: 8.0},
-			},
-		},
-	}
-
-	err := EnrichFromProviders(context.Background(), catalog)
-	if err == nil {
-		t.Fatal("expected error when providers fail")
-	}
-
-	// Catalog should be unchanged (no overrides applied)
-	for _, m := range catalog.ForProvider("openai") {
-		if m.ID == "gpt-4o" && m.InputPricePer1M != 2.0 {
-			t.Errorf("gpt-4o input = %f, want 2.0 (should be unchanged on failure)", m.InputPricePer1M)
-		}
+func TestParseGeminiSpecPage_NoData(t *testing.T) {
+	ctx, maxOut := parseGeminiSpecPage("<html><body>No specs here</body></html>")
+	if ctx != 0 || maxOut != 0 {
+		t.Errorf("expected zeros, got ctx=%d, maxOut=%d", ctx, maxOut)
 	}
 }
 
-func TestEnrichFromProviders_NilCatalog(t *testing.T) {
-	// Should not panic or error
-	if err := EnrichFromProviders(context.Background(), nil); err != nil {
-		t.Errorf("unexpected error for nil catalog: %v", err)
+func TestParseCommaNumber(t *testing.T) {
+	tests := []struct {
+		input string
+		want  int
+	}{
+		{"1,048,576", 1048576},
+		{"65,536", 65536},
+		{"128000", 128000},
+		{"0", 0},
 	}
-
-	catalog := &Catalog{}
-	if err := EnrichFromProviders(context.Background(), catalog); err != nil {
-		t.Errorf("unexpected error for empty catalog: %v", err)
+	for _, tt := range tests {
+		if got := parseCommaNumber(tt.input); got != tt.want {
+			t.Errorf("parseCommaNumber(%q) = %d, want %d", tt.input, got, tt.want)
+		}
 	}
 }
 

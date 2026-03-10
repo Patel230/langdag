@@ -23,7 +23,7 @@ var modelsCmd = &cobra.Command{
 	Use:   "models",
 	Short: "List available models with pricing",
 	Long: `Display model names, pricing (per 1M tokens), context windows, and max output
-for all supported providers. Data is sourced from LiteLLM's model catalog.
+for all supported providers. Data is sourced from official provider documentation.
 
 Use --update to fetch the latest data from the remote source.`,
 	Run: runModels,

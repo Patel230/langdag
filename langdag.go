@@ -666,8 +666,8 @@ func LoadModelCatalog(cachePath string) (*ModelCatalog, error) {
 	return models.LoadCatalog(cachePath)
 }
 
-// FetchModelCatalog fetches the latest model catalog from the remote source
-// (LiteLLM's model_prices_and_context_window.json on GitHub).
+// FetchModelCatalog fetches the latest model catalog from official provider
+// documentation pages (OpenAI, Anthropic, Google, xAI).
 // This does not require any API keys.
 //
 // If cachePath is non-empty, the fetched catalog is saved to that path
