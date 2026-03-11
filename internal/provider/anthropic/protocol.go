@@ -199,6 +199,7 @@ func convertResponse(resp *anthropic.Message) *types.CompletionResponse {
 // to types.StreamEvent, sending them on the provided channel.
 func processStreamEvents(stream *ssestream.Stream[anthropic.MessageStreamEventUnion], events chan<- types.StreamEvent) {
 	var currentToolUse *types.ContentBlock
+	var currentText *types.ContentBlock
 	var fullResponse *types.CompletionResponse
 
 	for stream.Next() {
@@ -220,11 +221,16 @@ func processStreamEvents(stream *ssestream.Stream[anthropic.MessageStreamEventUn
 
 		case "content_block_start":
 			cb := event.ContentBlock
-			if cb.Type == "tool_use" {
+			switch cb.Type {
+			case "tool_use":
 				currentToolUse = &types.ContentBlock{
 					Type: "tool_use",
 					ID:   cb.ID,
 					Name: cb.Name,
+				}
+			case "text":
+				currentText = &types.ContentBlock{
+					Type: "text",
 				}
 			}
 
@@ -232,6 +238,9 @@ func processStreamEvents(stream *ssestream.Stream[anthropic.MessageStreamEventUn
 			delta := event.Delta
 			switch delta.Type {
 			case "text_delta":
+				if currentText != nil {
+					currentText.Text += delta.Text
+				}
 				events <- types.StreamEvent{
 					Type:    types.StreamEventDelta,
 					Content: delta.Text,
@@ -242,11 +251,17 @@ func processStreamEvents(stream *ssestream.Stream[anthropic.MessageStreamEventUn
 					if currentToolUse.Input != nil {
 						existing = string(currentToolUse.Input)
 					}
-					currentToolUse.Input = json.RawMessage(existing + delta.Text)
+					currentToolUse.Input = json.RawMessage(existing + delta.PartialJSON)
 				}
 			}
 
 		case "content_block_stop":
+			if currentText != nil {
+				if fullResponse != nil {
+					fullResponse.Content = append(fullResponse.Content, *currentText)
+				}
+				currentText = nil
+			}
 			if currentToolUse != nil {
 				events <- types.StreamEvent{
 					Type:         types.StreamEventContentDone,

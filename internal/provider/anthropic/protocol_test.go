@@ -4,8 +4,37 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/anthropics/anthropic-sdk-go/packages/ssestream"
 	"langdag.com/langdag/types"
 )
+
+// mockDecoder implements ssestream.Decoder for testing processStreamEvents.
+type mockDecoder struct {
+	events []ssestream.Event
+	idx    int
+}
+
+func (d *mockDecoder) Next() bool {
+	if d.idx >= len(d.events) {
+		return false
+	}
+	d.idx++
+	return true
+}
+
+func (d *mockDecoder) Event() ssestream.Event {
+	return d.events[d.idx-1]
+}
+
+func (d *mockDecoder) Err() error   { return nil }
+func (d *mockDecoder) Close() error { return nil }
+
+// makeEvent creates an SSE event with the given type and JSON data.
+func makeEvent(eventType string, data interface{}) ssestream.Event {
+	b, _ := json.Marshal(data)
+	return ssestream.Event{Type: eventType, Data: b}
+}
 
 func TestConvertTools_FunctionOnly(t *testing.T) {
 	tools := []types.ToolDefinition{
@@ -268,5 +297,369 @@ func TestConvertMessages_ToolUseNilInput(t *testing.T) {
 	}
 	if result[0].Content[0].OfToolUse.Name != "no_args_tool" {
 		t.Errorf("name = %q, want %q", result[0].Content[0].OfToolUse.Name, "no_args_tool")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// processStreamEvents — streaming tool_use with input_json_delta
+// ---------------------------------------------------------------------------
+
+func TestProcessStreamEvents_ToolUseInputJSONDelta(t *testing.T) {
+	// Regression test: input_json_delta events must read delta.PartialJSON,
+	// not delta.Text. Previously delta.Text was used, which is always empty
+	// for input_json_delta events, resulting in empty tool Input.
+
+	dec := &mockDecoder{events: []ssestream.Event{
+		makeEvent("message_start", map[string]interface{}{
+			"type": "message_start",
+			"message": map[string]interface{}{
+				"id":    "msg_test123",
+				"model": "claude-sonnet-4-20250514",
+				"usage": map[string]interface{}{"input_tokens": 10, "output_tokens": 0},
+			},
+		}),
+		makeEvent("content_block_start", map[string]interface{}{
+			"type":  "content_block_start",
+			"index": 0,
+			"content_block": map[string]interface{}{
+				"type": "tool_use",
+				"id":   "toolu_abc123",
+				"name": "get_weather",
+			},
+		}),
+		// Partial JSON arrives in multiple input_json_delta chunks
+		makeEvent("content_block_delta", map[string]interface{}{
+			"type":  "content_block_delta",
+			"index": 0,
+			"delta": map[string]interface{}{
+				"type":         "input_json_delta",
+				"partial_json": `{"locat`,
+			},
+		}),
+		makeEvent("content_block_delta", map[string]interface{}{
+			"type":  "content_block_delta",
+			"index": 0,
+			"delta": map[string]interface{}{
+				"type":         "input_json_delta",
+				"partial_json": `ion":"San`,
+			},
+		}),
+		makeEvent("content_block_delta", map[string]interface{}{
+			"type":  "content_block_delta",
+			"index": 0,
+			"delta": map[string]interface{}{
+				"type":         "input_json_delta",
+				"partial_json": ` Francisco"}`,
+			},
+		}),
+		makeEvent("content_block_stop", map[string]interface{}{
+			"type":  "content_block_stop",
+			"index": 0,
+		}),
+		makeEvent("message_delta", map[string]interface{}{
+			"type":  "message_delta",
+			"delta": map[string]interface{}{"stop_reason": "tool_use"},
+			"usage": map[string]interface{}{"output_tokens": 5},
+		}),
+		makeEvent("message_stop", map[string]interface{}{
+			"type": "message_stop",
+		}),
+	}}
+
+	stream := ssestream.NewStream[anthropic.MessageStreamEventUnion](dec, nil)
+	events := make(chan types.StreamEvent, 20)
+
+	processStreamEvents(stream, events)
+
+	// Collect all events
+	var allEvents []types.StreamEvent
+	for ev := range events {
+		allEvents = append(allEvents, ev)
+	}
+
+	// Find the ContentDone event with the tool_use block
+	var toolBlock *types.ContentBlock
+	for _, ev := range allEvents {
+		if ev.Type == types.StreamEventContentDone && ev.ContentBlock != nil {
+			toolBlock = ev.ContentBlock
+		}
+	}
+
+	if toolBlock == nil {
+		t.Fatal("expected a ContentDone event with a tool_use block")
+	}
+
+	if toolBlock.Type != "tool_use" {
+		t.Errorf("block type = %q, want %q", toolBlock.Type, "tool_use")
+	}
+	if toolBlock.ID != "toolu_abc123" {
+		t.Errorf("block ID = %q, want %q", toolBlock.ID, "toolu_abc123")
+	}
+	if toolBlock.Name != "get_weather" {
+		t.Errorf("block name = %q, want %q", toolBlock.Name, "get_weather")
+	}
+
+	// The critical assertion: Input must contain the accumulated JSON, not be empty.
+	expectedInput := `{"location":"San Francisco"}`
+	if string(toolBlock.Input) != expectedInput {
+		t.Errorf("block Input = %q, want %q", string(toolBlock.Input), expectedInput)
+	}
+
+	// Also verify the Done event includes the tool block in the response
+	var doneResp *types.CompletionResponse
+	for _, ev := range allEvents {
+		if ev.Type == types.StreamEventDone {
+			doneResp = ev.Response
+		}
+	}
+	if doneResp == nil {
+		t.Fatal("expected a Done event with response")
+	}
+	if len(doneResp.Content) != 1 {
+		t.Fatalf("expected 1 content block in response, got %d", len(doneResp.Content))
+	}
+	if string(doneResp.Content[0].Input) != expectedInput {
+		t.Errorf("response content Input = %q, want %q", string(doneResp.Content[0].Input), expectedInput)
+	}
+}
+
+func TestProcessStreamEvents_TextBlockInFullResponse(t *testing.T) {
+	// Verify that text content blocks streamed via text_delta events
+	// are accumulated and added to fullResponse.Content in the Done event.
+	dec := &mockDecoder{events: []ssestream.Event{
+		makeEvent("message_start", map[string]interface{}{
+			"type": "message_start",
+			"message": map[string]interface{}{
+				"id":    "msg_textblock",
+				"model": "claude-sonnet-4-20250514",
+				"usage": map[string]interface{}{"input_tokens": 5, "output_tokens": 0},
+			},
+		}),
+		makeEvent("content_block_start", map[string]interface{}{
+			"type":          "content_block_start",
+			"index":         0,
+			"content_block": map[string]interface{}{"type": "text"},
+		}),
+		makeEvent("content_block_delta", map[string]interface{}{
+			"type":  "content_block_delta",
+			"index": 0,
+			"delta": map[string]interface{}{
+				"type": "text_delta",
+				"text": "Hello ",
+			},
+		}),
+		makeEvent("content_block_delta", map[string]interface{}{
+			"type":  "content_block_delta",
+			"index": 0,
+			"delta": map[string]interface{}{
+				"type": "text_delta",
+				"text": "world!",
+			},
+		}),
+		makeEvent("content_block_stop", map[string]interface{}{
+			"type":  "content_block_stop",
+			"index": 0,
+		}),
+		makeEvent("message_delta", map[string]interface{}{
+			"type":  "message_delta",
+			"delta": map[string]interface{}{"stop_reason": "end_turn"},
+			"usage": map[string]interface{}{"output_tokens": 2},
+		}),
+		makeEvent("message_stop", map[string]interface{}{
+			"type": "message_stop",
+		}),
+	}}
+
+	stream := ssestream.NewStream[anthropic.MessageStreamEventUnion](dec, nil)
+	events := make(chan types.StreamEvent, 20)
+
+	processStreamEvents(stream, events)
+
+	var doneResp *types.CompletionResponse
+	for ev := range events {
+		if ev.Type == types.StreamEventDone {
+			doneResp = ev.Response
+		}
+	}
+
+	if doneResp == nil {
+		t.Fatal("expected a Done event with response")
+	}
+	if len(doneResp.Content) != 1 {
+		t.Fatalf("expected 1 content block in response, got %d", len(doneResp.Content))
+	}
+	if doneResp.Content[0].Type != "text" {
+		t.Errorf("content block type = %q, want %q", doneResp.Content[0].Type, "text")
+	}
+	if doneResp.Content[0].Text != "Hello world!" {
+		t.Errorf("content block text = %q, want %q", doneResp.Content[0].Text, "Hello world!")
+	}
+}
+
+func TestProcessStreamEvents_MixedTextAndToolUse(t *testing.T) {
+	// Verify that a response with both a text block and a tool_use block
+	// has both blocks present in fullResponse.Content.
+	dec := &mockDecoder{events: []ssestream.Event{
+		makeEvent("message_start", map[string]interface{}{
+			"type": "message_start",
+			"message": map[string]interface{}{
+				"id":    "msg_mixed",
+				"model": "claude-sonnet-4-20250514",
+				"usage": map[string]interface{}{"input_tokens": 10, "output_tokens": 0},
+			},
+		}),
+		// First content block: text
+		makeEvent("content_block_start", map[string]interface{}{
+			"type":          "content_block_start",
+			"index":         0,
+			"content_block": map[string]interface{}{"type": "text"},
+		}),
+		makeEvent("content_block_delta", map[string]interface{}{
+			"type":  "content_block_delta",
+			"index": 0,
+			"delta": map[string]interface{}{
+				"type": "text_delta",
+				"text": "Let me check the weather.",
+			},
+		}),
+		makeEvent("content_block_stop", map[string]interface{}{
+			"type":  "content_block_stop",
+			"index": 0,
+		}),
+		// Second content block: tool_use
+		makeEvent("content_block_start", map[string]interface{}{
+			"type":  "content_block_start",
+			"index": 1,
+			"content_block": map[string]interface{}{
+				"type": "tool_use",
+				"id":   "toolu_mixed123",
+				"name": "get_weather",
+			},
+		}),
+		makeEvent("content_block_delta", map[string]interface{}{
+			"type":  "content_block_delta",
+			"index": 1,
+			"delta": map[string]interface{}{
+				"type":         "input_json_delta",
+				"partial_json": `{"location":"Paris"}`,
+			},
+		}),
+		makeEvent("content_block_stop", map[string]interface{}{
+			"type":  "content_block_stop",
+			"index": 1,
+		}),
+		makeEvent("message_delta", map[string]interface{}{
+			"type":  "message_delta",
+			"delta": map[string]interface{}{"stop_reason": "tool_use"},
+			"usage": map[string]interface{}{"output_tokens": 8},
+		}),
+		makeEvent("message_stop", map[string]interface{}{
+			"type": "message_stop",
+		}),
+	}}
+
+	stream := ssestream.NewStream[anthropic.MessageStreamEventUnion](dec, nil)
+	events := make(chan types.StreamEvent, 20)
+
+	processStreamEvents(stream, events)
+
+	var doneResp *types.CompletionResponse
+	for ev := range events {
+		if ev.Type == types.StreamEventDone {
+			doneResp = ev.Response
+		}
+	}
+
+	if doneResp == nil {
+		t.Fatal("expected a Done event with response")
+	}
+	if len(doneResp.Content) != 2 {
+		t.Fatalf("expected 2 content blocks in response, got %d", len(doneResp.Content))
+	}
+
+	// First block: text
+	if doneResp.Content[0].Type != "text" {
+		t.Errorf("first block type = %q, want %q", doneResp.Content[0].Type, "text")
+	}
+	if doneResp.Content[0].Text != "Let me check the weather." {
+		t.Errorf("first block text = %q, want %q", doneResp.Content[0].Text, "Let me check the weather.")
+	}
+
+	// Second block: tool_use
+	if doneResp.Content[1].Type != "tool_use" {
+		t.Errorf("second block type = %q, want %q", doneResp.Content[1].Type, "tool_use")
+	}
+	if doneResp.Content[1].ID != "toolu_mixed123" {
+		t.Errorf("second block ID = %q, want %q", doneResp.Content[1].ID, "toolu_mixed123")
+	}
+	if doneResp.Content[1].Name != "get_weather" {
+		t.Errorf("second block name = %q, want %q", doneResp.Content[1].Name, "get_weather")
+	}
+	expectedInput := `{"location":"Paris"}`
+	if string(doneResp.Content[1].Input) != expectedInput {
+		t.Errorf("second block input = %q, want %q", string(doneResp.Content[1].Input), expectedInput)
+	}
+}
+
+func TestProcessStreamEvents_TextDeltaUsesTextField(t *testing.T) {
+	// Verify text_delta events correctly read the "text" field.
+	dec := &mockDecoder{events: []ssestream.Event{
+		makeEvent("message_start", map[string]interface{}{
+			"type": "message_start",
+			"message": map[string]interface{}{
+				"id":    "msg_text",
+				"model": "claude-sonnet-4-20250514",
+				"usage": map[string]interface{}{"input_tokens": 5, "output_tokens": 0},
+			},
+		}),
+		makeEvent("content_block_start", map[string]interface{}{
+			"type":          "content_block_start",
+			"index":         0,
+			"content_block": map[string]interface{}{"type": "text"},
+		}),
+		makeEvent("content_block_delta", map[string]interface{}{
+			"type":  "content_block_delta",
+			"index": 0,
+			"delta": map[string]interface{}{
+				"type": "text_delta",
+				"text": "Hello ",
+			},
+		}),
+		makeEvent("content_block_delta", map[string]interface{}{
+			"type":  "content_block_delta",
+			"index": 0,
+			"delta": map[string]interface{}{
+				"type": "text_delta",
+				"text": "world!",
+			},
+		}),
+		makeEvent("content_block_stop", map[string]interface{}{
+			"type":  "content_block_stop",
+			"index": 0,
+		}),
+		makeEvent("message_delta", map[string]interface{}{
+			"type":  "message_delta",
+			"delta": map[string]interface{}{"stop_reason": "end_turn"},
+			"usage": map[string]interface{}{"output_tokens": 2},
+		}),
+		makeEvent("message_stop", map[string]interface{}{
+			"type": "message_stop",
+		}),
+	}}
+
+	stream := ssestream.NewStream[anthropic.MessageStreamEventUnion](dec, nil)
+	events := make(chan types.StreamEvent, 20)
+
+	processStreamEvents(stream, events)
+
+	var textContent string
+	for ev := range events {
+		if ev.Type == types.StreamEventDelta {
+			textContent += ev.Content
+		}
+	}
+
+	if textContent != "Hello world!" {
+		t.Errorf("streamed text = %q, want %q", textContent, "Hello world!")
 	}
 }

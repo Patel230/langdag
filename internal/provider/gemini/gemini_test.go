@@ -219,6 +219,101 @@ data: {"candidates":[{"content":{"parts":[{"text":"Hello world!"}]},"finishReaso
 	}
 }
 
+func TestParseSSEStream_DoneResponseContainsText(t *testing.T) {
+	sseData := `data: {"candidates":[{"content":{"parts":[{"text":"Hello"}]}}],"usageMetadata":{"promptTokenCount":5,"candidatesTokenCount":1}}
+
+data: {"candidates":[{"content":{"parts":[{"text":"Hello world"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":5,"candidatesTokenCount":2}}
+
+`
+
+	events := make(chan types.StreamEvent, 20)
+	go func() {
+		defer close(events)
+		parseSSEStream(strings.NewReader(sseData), events)
+	}()
+
+	var collected []types.StreamEvent
+	for e := range events {
+		collected = append(collected, e)
+	}
+
+	// Find the done event
+	var done *types.StreamEvent
+	for i := range collected {
+		if collected[i].Type == types.StreamEventDone {
+			done = &collected[i]
+			break
+		}
+	}
+	if done == nil {
+		t.Fatal("expected a done event")
+	}
+	if done.Response == nil {
+		t.Fatal("expected response in done event")
+	}
+	if len(done.Response.Content) != 1 {
+		t.Fatalf("expected 1 content block in done response, got %d", len(done.Response.Content))
+	}
+	if done.Response.Content[0].Type != "text" {
+		t.Errorf("expected text block, got %s", done.Response.Content[0].Type)
+	}
+	if done.Response.Content[0].Text != "Hello world" {
+		t.Errorf("expected full text 'Hello world', got '%s'", done.Response.Content[0].Text)
+	}
+}
+
+func TestParseSSEStream_DoneResponseContainsFunctionCall(t *testing.T) {
+	sseData := `data: {"candidates":[{"content":{"parts":[{"functionCall":{"name":"search","args":{"q":"test"}}}]}}],"usageMetadata":{"promptTokenCount":8,"candidatesTokenCount":5}}
+
+data: {"candidates":[{"content":{"parts":[{"functionCall":{"name":"search","args":{"q":"test"}}}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":8,"candidatesTokenCount":5}}
+
+`
+
+	events := make(chan types.StreamEvent, 20)
+	go func() {
+		defer close(events)
+		parseSSEStream(strings.NewReader(sseData), events)
+	}()
+
+	var collected []types.StreamEvent
+	for e := range events {
+		collected = append(collected, e)
+	}
+
+	// Find the done event
+	var done *types.StreamEvent
+	for i := range collected {
+		if collected[i].Type == types.StreamEventDone {
+			done = &collected[i]
+			break
+		}
+	}
+	if done == nil {
+		t.Fatal("expected a done event")
+	}
+	if done.Response == nil {
+		t.Fatal("expected response in done event")
+	}
+	// Should have at least one tool_use block (may be duplicated from multiple SSE chunks)
+	hasToolUse := false
+	for _, block := range done.Response.Content {
+		if block.Type == "tool_use" && block.Name == "search" {
+			hasToolUse = true
+			var args map[string]interface{}
+			if err := json.Unmarshal(block.Input, &args); err != nil {
+				t.Fatalf("failed to unmarshal tool input: %v", err)
+			}
+			if args["q"] != "test" {
+				t.Errorf("expected args.q='test', got %v", args["q"])
+			}
+			break
+		}
+	}
+	if !hasToolUse {
+		t.Errorf("expected at least one tool_use block in done response, got content: %+v", done.Response.Content)
+	}
+}
+
 func TestConvertTools(t *testing.T) {
 	tools := []types.ToolDefinition{
 		{

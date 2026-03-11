@@ -305,6 +305,7 @@ func parseSSEStream(body io.Reader, events chan<- types.StreamEvent) {
 
 	var prevText string
 	var lastUsage *types.Usage
+	var toolUseBlocks []types.ContentBlock
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -349,13 +350,15 @@ func parseSSEStream(body io.Reader, events chan<- types.StreamEvent) {
 		for _, p := range cand.Content.Parts {
 			if p.FunctionCall != nil {
 				args, _ := json.Marshal(p.FunctionCall.Args)
+				block := types.ContentBlock{
+					Type:  "tool_use",
+					Name:  p.FunctionCall.Name,
+					Input: args,
+				}
+				toolUseBlocks = append(toolUseBlocks, block)
 				events <- types.StreamEvent{
-					Type: types.StreamEventContentDone,
-					ContentBlock: &types.ContentBlock{
-						Type:  "tool_use",
-						Name:  p.FunctionCall.Name,
-						Input: args,
-					},
+					Type:         types.StreamEventContentDone,
+					ContentBlock: &block,
 				}
 			}
 		}
@@ -365,6 +368,13 @@ func parseSSEStream(body io.Reader, events chan<- types.StreamEvent) {
 	if lastUsage != nil {
 		resp.Usage = *lastUsage
 	}
+	if prevText != "" {
+		resp.Content = append(resp.Content, types.ContentBlock{
+			Type: "text",
+			Text: prevText,
+		})
+	}
+	resp.Content = append(resp.Content, toolUseBlocks...)
 
 	events <- types.StreamEvent{
 		Type:     types.StreamEventDone,
