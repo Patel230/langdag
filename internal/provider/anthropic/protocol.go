@@ -88,6 +88,12 @@ func convertMessages(messages []types.Message) ([]anthropic.MessageParam, error)
 							},
 						})
 					}
+				case "tool_use":
+					var input interface{}
+					if block.Input != nil {
+						_ = json.Unmarshal(block.Input, &input)
+					}
+					anthropicBlocks = append(anthropicBlocks, anthropic.NewToolUseBlock(block.ID, input, block.Name))
 				case "tool_result":
 					anthropicBlocks = append(anthropicBlocks, anthropic.NewToolResultBlock(block.ToolUseID, block.Content, block.IsError))
 				}
