@@ -260,6 +260,44 @@ data: [DONE]
 	}
 }
 
+func TestParseSSEStream_CacheTokens(t *testing.T) {
+	sseData := `data: {"id":"chatcmpl-c","model":"gpt-4o","choices":[{"index":0,"delta":{"role":"assistant","content":"Hi"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-c","model":"gpt-4o","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+
+data: {"id":"chatcmpl-c","model":"gpt-4o","choices":[],"usage":{"prompt_tokens":100,"completion_tokens":5,"prompt_tokens_details":{"cached_tokens":80},"completion_tokens_details":{"reasoning_tokens":3}}}
+
+data: [DONE]
+
+`
+
+	events := make(chan types.StreamEvent, 20)
+	go func() {
+		defer close(events)
+		parseSSEStream(strings.NewReader(sseData), events)
+	}()
+
+	var doneResp *types.CompletionResponse
+	for ev := range events {
+		if ev.Type == types.StreamEventDone {
+			doneResp = ev.Response
+		}
+	}
+
+	if doneResp == nil {
+		t.Fatal("expected done response")
+	}
+	if doneResp.Usage.InputTokens != 100 {
+		t.Errorf("InputTokens = %d, want 100", doneResp.Usage.InputTokens)
+	}
+	if doneResp.Usage.CacheReadInputTokens != 80 {
+		t.Errorf("CacheReadInputTokens = %d, want 80", doneResp.Usage.CacheReadInputTokens)
+	}
+	if doneResp.Usage.ReasoningTokens != 3 {
+		t.Errorf("ReasoningTokens = %d, want 3", doneResp.Usage.ReasoningTokens)
+	}
+}
+
 func TestParseSSEStream_ToolCalls(t *testing.T) {
 	sseData := `data: {"id":"chatcmpl-2","model":"gpt-4o","choices":[{"index":0,"delta":{"role":"assistant","content":null,"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"search","arguments":""}}]},"finish_reason":null}]}
 

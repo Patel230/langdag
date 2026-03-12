@@ -25,7 +25,7 @@ type responsesRequest struct {
 	Tools           []interface{} `json:"tools,omitempty"`
 	MaxOutputTokens int           `json:"max_output_tokens,omitempty"`
 	Temperature     *float64      `json:"temperature,omitempty"`
-	Stream          bool          `json:"stream,omitempty"`
+	Stream          bool          `json:"stream"`
 	Store           bool          `json:"store"`
 }
 
@@ -110,12 +110,17 @@ type responsesContentBlock struct {
 }
 
 type responsesUsage struct {
-	InputTokens         int                     `json:"input_tokens"`
-	OutputTokens        int                     `json:"output_tokens"`
-	OutputTokensDetails *responsesTokensDetails `json:"output_tokens_details,omitempty"`
+	InputTokens         int                            `json:"input_tokens"`
+	OutputTokens        int                            `json:"output_tokens"`
+	InputTokensDetails  *responsesInputTokensDetails   `json:"input_tokens_details,omitempty"`
+	OutputTokensDetails *responsesOutputTokensDetails  `json:"output_tokens_details,omitempty"`
 }
 
-type responsesTokensDetails struct {
+type responsesInputTokensDetails struct {
+	CachedTokens int `json:"cached_tokens,omitempty"`
+}
+
+type responsesOutputTokensDetails struct {
 	ReasoningTokens int `json:"reasoning_tokens,omitempty"`
 }
 
@@ -352,16 +357,24 @@ func convertResponsesResult(resp *responsesResponse) *types.CompletionResponse {
 	}
 
 	if resp.Usage != nil {
-		cr.Usage = types.Usage{
-			InputTokens:  resp.Usage.InputTokens,
-			OutputTokens: resp.Usage.OutputTokens,
-		}
-		if resp.Usage.OutputTokensDetails != nil {
-			cr.Usage.ReasoningTokens = resp.Usage.OutputTokensDetails.ReasoningTokens
-		}
+		cr.Usage = mapResponsesUsage(resp.Usage)
 	}
 
 	return cr
+}
+
+func mapResponsesUsage(u *responsesUsage) types.Usage {
+	result := types.Usage{
+		InputTokens:  u.InputTokens,
+		OutputTokens: u.OutputTokens,
+	}
+	if u.InputTokensDetails != nil {
+		result.CacheReadInputTokens = u.InputTokensDetails.CachedTokens
+	}
+	if u.OutputTokensDetails != nil {
+		result.ReasoningTokens = u.OutputTokensDetails.ReasoningTokens
+	}
+	return result
 }
 
 // --- SSE streaming ---

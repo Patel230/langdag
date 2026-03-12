@@ -219,6 +219,38 @@ data: {"candidates":[{"content":{"parts":[{"text":"Hello world!"}]},"finishReaso
 	}
 }
 
+func TestParseSSEStream_CacheTokens(t *testing.T) {
+	sseData := `data: {"candidates":[{"content":{"parts":[{"text":"Hi"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":100,"candidatesTokenCount":5,"cachedContentTokenCount":80,"thoughtsTokenCount":3}}
+
+`
+
+	events := make(chan types.StreamEvent, 20)
+	go func() {
+		defer close(events)
+		parseSSEStream(strings.NewReader(sseData), events)
+	}()
+
+	var doneResp *types.CompletionResponse
+	for ev := range events {
+		if ev.Type == types.StreamEventDone {
+			doneResp = ev.Response
+		}
+	}
+
+	if doneResp == nil {
+		t.Fatal("expected done response")
+	}
+	if doneResp.Usage.InputTokens != 100 {
+		t.Errorf("InputTokens = %d, want 100", doneResp.Usage.InputTokens)
+	}
+	if doneResp.Usage.CacheReadInputTokens != 80 {
+		t.Errorf("CacheReadInputTokens = %d, want 80", doneResp.Usage.CacheReadInputTokens)
+	}
+	if doneResp.Usage.ReasoningTokens != 3 {
+		t.Errorf("ReasoningTokens = %d, want 3", doneResp.Usage.ReasoningTokens)
+	}
+}
+
 func TestParseSSEStream_DoneResponseContainsText(t *testing.T) {
 	sseData := `data: {"candidates":[{"content":{"parts":[{"text":"Hello"}]}}],"usageMetadata":{"promptTokenCount":5,"candidatesTokenCount":1}}
 

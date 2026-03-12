@@ -36,6 +36,167 @@ func makeEvent(eventType string, data interface{}) ssestream.Event {
 	return ssestream.Event{Type: eventType, Data: b}
 }
 
+// ---------------------------------------------------------------------------
+// buildParams — prompt caching (CacheControl on system prompt and last tool)
+// ---------------------------------------------------------------------------
+
+func TestBuildParams_SystemPromptHasCacheControl(t *testing.T) {
+	req := &types.CompletionRequest{
+		Model:     "claude-sonnet-4-20250514",
+		Messages:  []types.Message{{Role: "user", Content: json.RawMessage(`"Hello"`)}},
+		System:    "You are a helpful assistant.",
+		MaxTokens: 1024,
+	}
+	params, err := buildParams(req)
+	if err != nil {
+		t.Fatalf("buildParams: %v", err)
+	}
+	if len(params.System) != 1 {
+		t.Fatalf("expected 1 system block, got %d", len(params.System))
+	}
+	if params.System[0].CacheControl.Type != "ephemeral" {
+		t.Errorf("system CacheControl.Type = %q, want %q", params.System[0].CacheControl.Type, "ephemeral")
+	}
+}
+
+func TestBuildParams_NoSystemPromptNoCacheControl(t *testing.T) {
+	req := &types.CompletionRequest{
+		Model:     "claude-sonnet-4-20250514",
+		Messages:  []types.Message{{Role: "user", Content: json.RawMessage(`"Hello"`)}},
+		MaxTokens: 1024,
+	}
+	params, err := buildParams(req)
+	if err != nil {
+		t.Fatalf("buildParams: %v", err)
+	}
+	if len(params.System) != 0 {
+		t.Errorf("expected no system blocks when system prompt is empty, got %d", len(params.System))
+	}
+}
+
+func TestBuildParams_LastClientToolHasCacheControl(t *testing.T) {
+	req := &types.CompletionRequest{
+		Model:    "claude-sonnet-4-20250514",
+		Messages: []types.Message{{Role: "user", Content: json.RawMessage(`"Hello"`)}},
+		Tools: []types.ToolDefinition{
+			{
+				Name:        "get_weather",
+				Description: "Get weather",
+				InputSchema: json.RawMessage(`{"type":"object","properties":{"location":{"type":"string"}}}`),
+			},
+			{
+				Name:        "calculator",
+				Description: "Calculate",
+				InputSchema: json.RawMessage(`{"type":"object","properties":{"expr":{"type":"string"}}}`),
+			},
+		},
+		MaxTokens: 1024,
+	}
+	params, err := buildParams(req)
+	if err != nil {
+		t.Fatalf("buildParams: %v", err)
+	}
+	if len(params.Tools) != 2 {
+		t.Fatalf("expected 2 tools, got %d", len(params.Tools))
+	}
+	// First tool should NOT have CacheControl set
+	if params.Tools[0].OfTool.CacheControl.Type == "ephemeral" {
+		t.Error("first tool should not have CacheControl set")
+	}
+	// Last tool SHOULD have CacheControl set
+	if params.Tools[1].OfTool.CacheControl.Type != "ephemeral" {
+		t.Errorf("last tool CacheControl.Type = %q, want %q", params.Tools[1].OfTool.CacheControl.Type, "ephemeral")
+	}
+}
+
+func TestBuildParams_LastServerToolHasCacheControl(t *testing.T) {
+	req := &types.CompletionRequest{
+		Model:    "claude-sonnet-4-20250514",
+		Messages: []types.Message{{Role: "user", Content: json.RawMessage(`"Hello"`)}},
+		Tools: []types.ToolDefinition{
+			{
+				Name:        "get_weather",
+				Description: "Get weather",
+				InputSchema: json.RawMessage(`{"type":"object","properties":{"location":{"type":"string"}}}`),
+			},
+			{Name: types.ServerToolWebSearch},
+		},
+		MaxTokens: 1024,
+	}
+	params, err := buildParams(req)
+	if err != nil {
+		t.Fatalf("buildParams: %v", err)
+	}
+	if len(params.Tools) != 2 {
+		t.Fatalf("expected 2 tools, got %d", len(params.Tools))
+	}
+	// First tool (client) should NOT have CacheControl
+	if params.Tools[0].OfTool.CacheControl.Type == "ephemeral" {
+		t.Error("first tool should not have CacheControl set")
+	}
+	// Last tool (server/web_search) SHOULD have CacheControl
+	if params.Tools[1].OfWebSearchTool20250305 == nil {
+		t.Fatal("expected last tool to be web_search server tool")
+	}
+	if params.Tools[1].OfWebSearchTool20250305.CacheControl.Type != "ephemeral" {
+		t.Errorf("last server tool CacheControl.Type = %q, want %q",
+			params.Tools[1].OfWebSearchTool20250305.CacheControl.Type, "ephemeral")
+	}
+}
+
+func TestBuildParams_SingleToolHasCacheControl(t *testing.T) {
+	req := &types.CompletionRequest{
+		Model:    "claude-sonnet-4-20250514",
+		Messages: []types.Message{{Role: "user", Content: json.RawMessage(`"Hello"`)}},
+		Tools: []types.ToolDefinition{
+			{
+				Name:        "get_weather",
+				Description: "Get weather",
+				InputSchema: json.RawMessage(`{"type":"object","properties":{"location":{"type":"string"}}}`),
+			},
+		},
+		MaxTokens: 1024,
+	}
+	params, err := buildParams(req)
+	if err != nil {
+		t.Fatalf("buildParams: %v", err)
+	}
+	if len(params.Tools) != 1 {
+		t.Fatalf("expected 1 tool, got %d", len(params.Tools))
+	}
+	if params.Tools[0].OfTool.CacheControl.Type != "ephemeral" {
+		t.Errorf("single tool CacheControl.Type = %q, want %q", params.Tools[0].OfTool.CacheControl.Type, "ephemeral")
+	}
+}
+
+func TestBuildParams_SystemAndToolsBothCached(t *testing.T) {
+	req := &types.CompletionRequest{
+		Model:    "claude-sonnet-4-20250514",
+		Messages: []types.Message{{Role: "user", Content: json.RawMessage(`"Hello"`)}},
+		System:   "You are a helpful assistant.",
+		Tools: []types.ToolDefinition{
+			{
+				Name:        "get_weather",
+				Description: "Get weather",
+				InputSchema: json.RawMessage(`{"type":"object","properties":{"location":{"type":"string"}}}`),
+			},
+		},
+		MaxTokens: 1024,
+	}
+	params, err := buildParams(req)
+	if err != nil {
+		t.Fatalf("buildParams: %v", err)
+	}
+	// System prompt should be cached
+	if params.System[0].CacheControl.Type != "ephemeral" {
+		t.Error("system prompt should have CacheControl set")
+	}
+	// Tool should also be cached
+	if params.Tools[0].OfTool.CacheControl.Type != "ephemeral" {
+		t.Error("tool should have CacheControl set")
+	}
+}
+
 func TestConvertTools_FunctionOnly(t *testing.T) {
 	tools := []types.ToolDefinition{
 		{
@@ -370,6 +531,7 @@ func TestProcessStreamEvents_ToolUseInputJSONDelta(t *testing.T) {
 	events := make(chan types.StreamEvent, 20)
 
 	processStreamEvents(stream, events)
+	close(events)
 
 	// Collect all events
 	var allEvents []types.StreamEvent
@@ -474,6 +636,7 @@ func TestProcessStreamEvents_TextBlockInFullResponse(t *testing.T) {
 	events := make(chan types.StreamEvent, 20)
 
 	processStreamEvents(stream, events)
+	close(events)
 
 	var doneResp *types.CompletionResponse
 	for ev := range events {
@@ -562,6 +725,7 @@ func TestProcessStreamEvents_MixedTextAndToolUse(t *testing.T) {
 	events := make(chan types.StreamEvent, 20)
 
 	processStreamEvents(stream, events)
+	close(events)
 
 	var doneResp *types.CompletionResponse
 	for ev := range events {
@@ -651,6 +815,7 @@ func TestProcessStreamEvents_TextDeltaUsesTextField(t *testing.T) {
 	events := make(chan types.StreamEvent, 20)
 
 	processStreamEvents(stream, events)
+	close(events)
 
 	var textContent string
 	for ev := range events {

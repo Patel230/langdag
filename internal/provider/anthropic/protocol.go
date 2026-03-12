@@ -28,7 +28,10 @@ func buildParams(req *types.CompletionRequest) (anthropic.MessageNewParams, erro
 
 	if req.System != "" {
 		params.System = []anthropic.TextBlockParam{
-			{Text: req.System},
+			{
+				Text:         req.System,
+				CacheControl: anthropic.NewCacheControlEphemeralParam(),
+			},
 		}
 	}
 
@@ -44,6 +47,14 @@ func buildParams(req *types.CompletionRequest) (anthropic.MessageNewParams, erro
 		tools, err := convertTools(req.Tools)
 		if err != nil {
 			return anthropic.MessageNewParams{}, err
+		}
+		// Set cache control breakpoint on the last tool for prompt caching.
+		// Anthropic caches everything up to and including the marked block,
+		// so subsequent requests with identical tools pay only 10% of input cost.
+		if n := len(tools); n > 0 {
+			if cc := tools[n-1].GetCacheControl(); cc != nil {
+				*cc = anthropic.NewCacheControlEphemeralParam()
+			}
 		}
 		params.Tools = tools
 	}

@@ -167,6 +167,96 @@ func TestConvertResponsesMessages_ToolUseAndResult(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// mapResponsesUsage — cache and reasoning token mapping
+// ---------------------------------------------------------------------------
+
+func TestMapResponsesUsage(t *testing.T) {
+	u := &responsesUsage{
+		InputTokens:  100,
+		OutputTokens: 50,
+		InputTokensDetails: &responsesInputTokensDetails{
+			CachedTokens: 30,
+		},
+		OutputTokensDetails: &responsesOutputTokensDetails{
+			ReasoningTokens: 10,
+		},
+	}
+
+	result := mapResponsesUsage(u)
+
+	if result.InputTokens != 100 {
+		t.Errorf("expected InputTokens=100, got %d", result.InputTokens)
+	}
+	if result.OutputTokens != 50 {
+		t.Errorf("expected OutputTokens=50, got %d", result.OutputTokens)
+	}
+	if result.CacheReadInputTokens != 30 {
+		t.Errorf("expected CacheReadInputTokens=30, got %d", result.CacheReadInputTokens)
+	}
+	if result.ReasoningTokens != 10 {
+		t.Errorf("expected ReasoningTokens=10, got %d", result.ReasoningTokens)
+	}
+}
+
+func TestMapResponsesUsage_NoDetails(t *testing.T) {
+	u := &responsesUsage{
+		InputTokens:  100,
+		OutputTokens: 50,
+	}
+
+	result := mapResponsesUsage(u)
+
+	if result.CacheReadInputTokens != 0 {
+		t.Errorf("expected CacheReadInputTokens=0, got %d", result.CacheReadInputTokens)
+	}
+	if result.ReasoningTokens != 0 {
+		t.Errorf("expected ReasoningTokens=0, got %d", result.ReasoningTokens)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// convertResponsesResult — verify cache tokens flow through
+// ---------------------------------------------------------------------------
+
+func TestConvertResponsesResult_CacheTokens(t *testing.T) {
+	resp := &responsesResponse{
+		ID:    "resp_cache",
+		Model: "grok-3",
+		Output: []responsesOutput{
+			{
+				Type: "message",
+				Role: "assistant",
+				Content: []responsesContentBlock{
+					{Type: "output_text", Text: "Hello!"},
+				},
+			},
+		},
+		Usage: &responsesUsage{
+			InputTokens:  100,
+			OutputTokens: 20,
+			InputTokensDetails: &responsesInputTokensDetails{
+				CachedTokens: 80,
+			},
+			OutputTokensDetails: &responsesOutputTokensDetails{
+				ReasoningTokens: 5,
+			},
+		},
+		Status: "completed",
+	}
+
+	cr := convertResponsesResult(resp)
+	if cr.Usage.InputTokens != 100 {
+		t.Errorf("InputTokens = %d, want 100", cr.Usage.InputTokens)
+	}
+	if cr.Usage.CacheReadInputTokens != 80 {
+		t.Errorf("CacheReadInputTokens = %d, want 80", cr.Usage.CacheReadInputTokens)
+	}
+	if cr.Usage.ReasoningTokens != 5 {
+		t.Errorf("ReasoningTokens = %d, want 5", cr.Usage.ReasoningTokens)
+	}
+}
+
 func TestConvertResponsesResult_TextOnly(t *testing.T) {
 	resp := &responsesResponse{
 		ID:    "resp_123",
@@ -293,6 +383,39 @@ func TestParseResponsesSSEStream_TextOnly(t *testing.T) {
 	}
 	if doneResp.Usage.InputTokens != 5 || doneResp.Usage.OutputTokens != 2 {
 		t.Errorf("usage = %+v, want in=5 out=2", doneResp.Usage)
+	}
+}
+
+func TestParseResponsesSSEStream_CacheTokens(t *testing.T) {
+	sse := strings.Join([]string{
+		`data: {"type":"response.output_text.delta","output_index":0,"content_index":0,"delta":"Hi"}`,
+		`data: {"type":"response.completed","response":{"id":"resp_c","model":"grok-3","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Hi"}]}],"usage":{"input_tokens":100,"output_tokens":5,"input_tokens_details":{"cached_tokens":80},"output_tokens_details":{"reasoning_tokens":2}},"status":"completed"}}`,
+	}, "\n")
+
+	events := make(chan types.StreamEvent, 100)
+	go func() {
+		defer close(events)
+		parseResponsesSSEStream(strings.NewReader(sse), events)
+	}()
+
+	var doneResp *types.CompletionResponse
+	for ev := range events {
+		if ev.Type == types.StreamEventDone {
+			doneResp = ev.Response
+		}
+	}
+
+	if doneResp == nil {
+		t.Fatal("expected done response")
+	}
+	if doneResp.Usage.InputTokens != 100 {
+		t.Errorf("InputTokens = %d, want 100", doneResp.Usage.InputTokens)
+	}
+	if doneResp.Usage.CacheReadInputTokens != 80 {
+		t.Errorf("CacheReadInputTokens = %d, want 80", doneResp.Usage.CacheReadInputTokens)
+	}
+	if doneResp.Usage.ReasoningTokens != 2 {
+		t.Errorf("ReasoningTokens = %d, want 2", doneResp.Usage.ReasoningTokens)
 	}
 }
 
