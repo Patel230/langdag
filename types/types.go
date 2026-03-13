@@ -34,6 +34,7 @@ type ContentBlock struct {
 	Content     string          `json:"content,omitempty"`
 	ContentJSON json.RawMessage `json:"content_json,omitempty"` // structured tool result (takes priority over Content when set)
 	IsError     bool            `json:"is_error,omitempty"`
+	DurationMs  int             `json:"duration_ms,omitempty"` // tool execution time in ms
 }
 
 // ToolResultContent returns the tool result content as a JSON value.
