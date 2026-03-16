@@ -101,10 +101,11 @@ func (m *Manager) PromptFrom(ctx context.Context, parentNodeID, message, model s
 	// Fix orphaned tool_use blocks: query the DB index (not message JSON)
 	// for tool_use IDs among ancestors that have no matching tool_result.
 	// This is O(orphans), not O(messages).
-	ancestorIDs := make([]string, len(ancestors))
+	ancestorIDs := make([]string, len(ancestors)+1)
 	for i, a := range ancestors {
 		ancestorIDs[i] = a.ID
 	}
+	ancestorIDs[len(ancestors)] = userNode.ID
 	orphans, err := m.storage.GetOrphanedToolUses(ctx, ancestorIDs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check orphaned tool uses: %w", err)

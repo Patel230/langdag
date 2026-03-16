@@ -608,6 +608,123 @@ func TestOrphanedToolUse_PromptFromIndexesToolResult(t *testing.T) {
 	}
 }
 
+func TestOrphanedToolUse_NoDuplicateWhenResultSent(t *testing.T) {
+	// Regression test for v0.5.6 bug: when PromptFrom sends a tool_result,
+	// orphan detection must NOT inject a synthetic duplicate.
+	// The bug was that ancestorIDs didn't include the new userNode, so the
+	// DB query couldn't see its indexed tool_result IDs.
+	_, store, cleanup := newTestManagerWithStore(t, mock.Config{Mode: "echo"})
+	defer cleanup()
+	ctx := context.Background()
+
+	// Create conversation with tool_use (indexed).
+	nodes := []*types.Node{
+		{ID: "u1", RootID: "u1", Sequence: 0, NodeType: types.NodeTypeUser, Content: "hi", CreatedAt: time.Now()},
+		{ID: "a1", ParentID: "u1", RootID: "u1", Sequence: 1, NodeType: types.NodeTypeAssistant,
+			Content: `[{"type":"tool_use","id":"t1","name":"search","input":{}}]`, CreatedAt: time.Now()},
+	}
+	for _, n := range nodes {
+		if err := store.CreateNode(ctx, n); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := store.IndexToolIDs(ctx, "a1", []string{"t1"}, "use"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Send tool_result via PromptFrom. The mock echoes back whatever we send,
+	// so we can inspect the echo to verify no duplicate was injected.
+	mgr := NewManager(store, mock.New(mock.Config{Mode: "echo"}))
+	toolResult := `[{"type":"tool_result","tool_use_id":"t1","content":"done"}]`
+	events, err := mgr.PromptFrom(ctx, "a1", toolResult, "", nil)
+	if err != nil {
+		t.Fatalf("PromptFrom: %v", err)
+	}
+
+	// Collect the echoed content. The echo mock returns the last user message.
+	var echoContent string
+	for ev := range events {
+		if ev.Type == types.StreamEventError {
+			t.Fatalf("unexpected error: %v", ev.Error)
+		}
+		if ev.Type == types.StreamEventDelta {
+			echoContent += ev.Content
+		}
+	}
+
+	// Count how many times tool_use_id "t1" appears as a tool_result.
+	// There must be exactly 1 (the real one), not 2 (real + synthetic).
+	count := 0
+	for i := 0; i+len(`"tool_use_id":"t1"`) <= len(echoContent); i++ {
+		if echoContent[i:i+len(`"tool_use_id":"t1"`)] == `"tool_use_id":"t1"` {
+			count++
+		}
+	}
+	// The echo mock echoes the last user message text, not the JSON structure,
+	// so instead verify no synthetic node was injected by checking the ancestors.
+	children, err := store.GetNodeChildren(ctx, "a1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Should have exactly 1 child (the user node), not 2.
+	userChildren := 0
+	for _, c := range children {
+		if c.NodeType == types.NodeTypeUser {
+			userChildren++
+		}
+	}
+	if userChildren != 1 {
+		t.Errorf("expected 1 user child of assistant, got %d", userChildren)
+	}
+
+	// Verify via the ancestor chain: get ancestors of the assistant node created
+	// by PromptFrom (the grandchild). There should be no synthetic tool_result nodes.
+	var assistantChildren []*types.Node
+	for _, c := range children {
+		if c.NodeType == types.NodeTypeUser {
+			gc, err := store.GetNodeChildren(ctx, c.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			assistantChildren = append(assistantChildren, gc...)
+		}
+	}
+	if len(assistantChildren) == 0 {
+		t.Fatal("expected assistant child node from PromptFrom")
+	}
+
+	// Get full ancestor chain for the final assistant node and rebuild messages.
+	ancestors, err := store.GetAncestors(ctx, assistantChildren[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	messages := buildMessages(ancestors)
+
+	// Find the user message that follows the assistant with tool_use.
+	// It should contain exactly 1 tool_result for t1, not 2.
+	for i, msg := range messages {
+		if i == 0 || messages[i-1].Role != "assistant" || msg.Role != "user" {
+			continue
+		}
+		var blocks []struct {
+			Type      string `json:"type"`
+			ToolUseID string `json:"tool_use_id"`
+		}
+		if err := json.Unmarshal(msg.Content, &blocks); err != nil {
+			continue
+		}
+		resultCount := 0
+		for _, b := range blocks {
+			if b.Type == "tool_result" && b.ToolUseID == "t1" {
+				resultCount++
+			}
+		}
+		if resultCount > 1 {
+			t.Errorf("DUPLICATE tool_result for t1: found %d in user message (expected 1)\ncontent: %s", resultCount, msg.Content)
+		}
+	}
+}
+
 // --- failingStorage for CreateNode failure tests ---
 
 // failingStorage wraps a real storage and fails CreateNode after N successful calls.
