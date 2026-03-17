@@ -89,11 +89,32 @@ func convertMessages(messages []types.Message) ([]anthropic.MessageParam, error)
 					}
 				case "document":
 					if block.Data != "" {
+						var source anthropic.DocumentBlockParamSourceUnion
+						switch block.MediaType {
+						case "text/plain":
+							source = anthropic.DocumentBlockParamSourceUnion{
+								OfText: &anthropic.PlainTextSourceParam{
+									Data: block.Data,
+								},
+							}
+						default: // "application/pdf" or unspecified
+							source = anthropic.DocumentBlockParamSourceUnion{
+								OfBase64: &anthropic.Base64PDFSourceParam{
+									Data: block.Data,
+								},
+							}
+						}
+						anthropicBlocks = append(anthropicBlocks, anthropic.ContentBlockParamUnion{
+							OfDocument: &anthropic.DocumentBlockParam{
+								Source: source,
+							},
+						})
+					} else if block.URL != "" {
 						anthropicBlocks = append(anthropicBlocks, anthropic.ContentBlockParamUnion{
 							OfDocument: &anthropic.DocumentBlockParam{
 								Source: anthropic.DocumentBlockParamSourceUnion{
-									OfBase64: &anthropic.Base64PDFSourceParam{
-										Data: block.Data,
+									OfURL: &anthropic.URLPDFSourceParam{
+										URL: block.URL,
 									},
 								},
 							},

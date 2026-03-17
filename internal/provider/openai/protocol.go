@@ -204,6 +204,10 @@ func convertMessages(messages []types.Message, system string) []requestMessage {
 						ImageURL: &imageURL{URL: url},
 					})
 				}
+			case "document":
+				if block.Data != "" && block.MediaType == "text/plain" {
+					contentParts = append(contentParts, contentPart{Type: "text", Text: block.Data})
+				}
 			case "tool_use":
 				toolCalls = append(toolCalls, requestToolCall{
 					ID:   block.ID,

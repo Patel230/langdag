@@ -227,6 +227,13 @@ func convertResponsesMessages(messages []types.Message, system string) (string, 
 						ImageURL: url,
 					})
 				}
+			case "document":
+				if block.Data != "" && block.MediaType == "text/plain" {
+					textParts = append(textParts, responsesInputText{
+						Type: "input_text",
+						Text: block.Data,
+					})
+				}
 			case "tool_use":
 				toolCalls = append(toolCalls, responsesFunctionCallInput{
 					Type:      "function_call",
