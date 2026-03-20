@@ -16,8 +16,8 @@ type Config struct {
 	Storage   StorageConfig   `mapstructure:"storage"`
 	Providers ProvidersConfig `mapstructure:"providers"`
 	Server    ServerConfig    `mapstructure:"server"`
-	Logging LoggingConfig `mapstructure:"logging"`
-	Retry   RetryConfig   `mapstructure:"retry"`
+	Logging   LoggingConfig   `mapstructure:"logging"`
+	Retry     RetryConfig     `mapstructure:"retry"`
 }
 
 // StorageConfig represents storage configuration.
@@ -36,6 +36,7 @@ type ProvidersConfig struct {
 	OpenAI    ProviderConfig     `mapstructure:"openai"`
 	Gemini    ProviderConfig     `mapstructure:"gemini"`
 	Grok      ProviderConfig     `mapstructure:"grok"`
+	Ollama    ProviderConfig     `mapstructure:"ollama"`
 	Mock      MockProviderConfig `mapstructure:"mock"`
 
 	// Cloud platform variants
@@ -84,8 +85,8 @@ type RoutingEntry struct {
 type MockProviderConfig struct {
 	Mode          string `mapstructure:"mode"`           // random, echo, fixed
 	FixedResponse string `mapstructure:"fixed_response"` // response for fixed mode
-	Delay         string `mapstructure:"delay"`           // delay before responding
-	ChunkDelay    string `mapstructure:"chunk_delay"`     // delay between stream chunks
+	Delay         string `mapstructure:"delay"`          // delay before responding
+	ChunkDelay    string `mapstructure:"chunk_delay"`    // delay between stream chunks
 }
 
 // ServerConfig represents server configuration.
@@ -149,6 +150,7 @@ func Load() (*Config, error) {
 	v.BindEnv("providers.gemini.api_key", "GEMINI_API_KEY")
 	v.BindEnv("providers.grok.api_key", "XAI_API_KEY")
 	v.BindEnv("providers.grok.base_url", "XAI_BASE_URL")
+	v.BindEnv("providers.ollama.base_url", "OLLAMA_BASE_URL")
 	v.BindEnv("providers.mock.mode", "LANGDAG_MOCK_MODE")
 	v.BindEnv("providers.mock.fixed_response", "LANGDAG_MOCK_RESPONSE")
 	v.BindEnv("providers.mock.delay", "LANGDAG_MOCK_DELAY")

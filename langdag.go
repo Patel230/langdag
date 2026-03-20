@@ -16,7 +16,6 @@ import (
 	internalprovider "langdag.com/langdag/internal/provider"
 	anthropicprovider "langdag.com/langdag/internal/provider/anthropic"
 	geminiprovider "langdag.com/langdag/internal/provider/gemini"
-	ollamaprovider "langdag.com/langdag/internal/provider/ollama"
 	openaiprovider "langdag.com/langdag/internal/provider/openai"
 	internalstorage "langdag.com/langdag/internal/storage"
 	"langdag.com/langdag/internal/storage/sqlite"
@@ -612,7 +611,7 @@ func createSingleProvider(ctx context.Context, name string, cfg Config) (interna
 		if cfg.OllamaConfig != nil && cfg.OllamaConfig.BaseURL != "" {
 			baseURL = cfg.OllamaConfig.BaseURL
 		}
-		return ollamaprovider.New(baseURL), nil
+		return openaiprovider.NewOllama(baseURL), nil
 
 	default:
 		return nil, fmt.Errorf("langdag: unknown provider: %s", name)
