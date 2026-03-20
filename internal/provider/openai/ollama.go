@@ -13,6 +13,8 @@ import (
 	"langdag.com/langdag/types"
 )
 
+// ollamaProvider implements the provider interface for Ollama.
+// Ollama is a local LLM server with an OpenAI-compatible API at /v1/chat/completions.
 type ollamaProvider struct {
 	baseURL string
 	apiKey  string

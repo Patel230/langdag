@@ -1,6 +1,7 @@
 package openai
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -546,3 +547,402 @@ func TestDefaultContextWindow(t *testing.T) {
 		})
 	}
 }
+
+func TestOllamaConvertResponse_EmptyChoices(t *testing.T) {
+	resp := &chatCompletionResponse{
+		ID:      "chatcmpl-empty",
+		Model:   "llama3",
+		Choices: []choice{},
+	}
+
+	result := convertResponse(resp)
+
+	if result.ID != "chatcmpl-empty" {
+		t.Errorf("expected ID 'chatcmpl-empty', got %s", result.ID)
+	}
+	if len(result.Content) != 0 {
+		t.Errorf("expected 0 content blocks, got %d", len(result.Content))
+	}
+}
+
+func TestOllamaConvertResponse_NilUsage(t *testing.T) {
+	stop := "stop"
+	content := "test"
+	resp := &chatCompletionResponse{
+		ID:    "chatcmpl-nilusage",
+		Model: "llama3",
+		Choices: []choice{
+			{
+				Message:      responseMessage{Content: &content},
+				FinishReason: &stop,
+			},
+		},
+		Usage: nil,
+	}
+
+	result := convertResponse(resp)
+
+	if result.Usage.InputTokens != 0 {
+		t.Errorf("expected InputTokens=0, got %d", result.Usage.InputTokens)
+	}
+}
+
+func TestOllamaConvertResponse_TextAndToolCall(t *testing.T) {
+	stop := "stop"
+	resp := &chatCompletionResponse{
+		ID:    "chatcmpl-mixed",
+		Model: "llama3",
+		Choices: []choice{
+			{
+				Message: responseMessage{
+					Content: strPtr("Here is the weather:"),
+					ToolCalls: []responseToolCall{
+						{
+							ID:       "call_1",
+							Type:     "function",
+							Function: responseFunction{Name: "get_weather", Arguments: `{"city":"NYC"}`},
+						},
+					},
+				},
+				FinishReason: &stop,
+			},
+		},
+		Usage: &usage{PromptTokens: 10, CompletionTokens: 20},
+	}
+
+	result := convertResponse(resp)
+
+	if len(result.Content) != 2 {
+		t.Fatalf("expected 2 content blocks, got %d", len(result.Content))
+	}
+	if result.Content[0].Type != "text" || result.Content[0].Text != "Here is the weather:" {
+		t.Errorf("unexpected text block: %+v", result.Content[0])
+	}
+	if result.Content[1].Type != "tool_use" || result.Content[1].Name != "get_weather" {
+		t.Errorf("unexpected tool block: %+v", result.Content[1])
+	}
+}
+
+func TestOllamaConvertMessages_SystemAndUser(t *testing.T) {
+	messages := []types.Message{
+		{Role: "user", Content: json.RawMessage(`"Hello"`)},
+	}
+
+	result := convertMessages(messages, "You are a helpful assistant")
+
+	if len(result) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(result))
+	}
+	if result[0].Role != "system" {
+		t.Errorf("expected first message to be system, got %s", result[0].Role)
+	}
+	if result[1].Role != "user" {
+		t.Errorf("expected second message to be user, got %s", result[1].Role)
+	}
+}
+
+func TestOllamaConvertMessages_AssistantMessage(t *testing.T) {
+	messages := []types.Message{
+		{Role: "assistant", Content: json.RawMessage(`"I am an assistant"`)},
+	}
+
+	result := convertMessages(messages, "")
+
+	if len(result) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(result))
+	}
+	if result[0].Role != "assistant" {
+		t.Errorf("expected assistant role, got %s", result[0].Role)
+	}
+	content, ok := result[0].Content.(string)
+	if !ok || content != "I am an assistant" {
+		t.Errorf("expected content 'I am an assistant', got %v", result[0].Content)
+	}
+}
+
+func TestOllamaConvertMessages_MalformedContent(t *testing.T) {
+	messages := []types.Message{
+		{Role: "user", Content: json.RawMessage(`{invalid json}`)},
+	}
+
+	result := convertMessages(messages, "")
+
+	if len(result) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(result))
+	}
+	content, ok := result[0].Content.(string)
+	if !ok || content != "{invalid json}" {
+		t.Errorf("expected raw content, got %v", result[0].Content)
+	}
+}
+
+func TestOllamaConvertMessages_DocumentContent(t *testing.T) {
+	blocks := []types.ContentBlock{
+		{Type: "document", Data: "document text content", MediaType: "text/plain"},
+	}
+	content, _ := json.Marshal(blocks)
+
+	messages := []types.Message{
+		{Role: "user", Content: content},
+	}
+
+	result := convertMessages(messages, "")
+
+	if len(result) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(result))
+	}
+	// Document text/plain is converted to string via extractText
+	contentStr, ok := result[0].Content.(string)
+	if !ok {
+		t.Fatal("expected content to be string")
+	}
+	if contentStr != "document text content" {
+		t.Errorf("unexpected content: %s", contentStr)
+	}
+}
+
+func TestOllamaConvertMessages_NonTextDocumentIgnored(t *testing.T) {
+	blocks := []types.ContentBlock{
+		{Type: "document", Data: "pdf bytes", MediaType: "application/pdf"},
+		{Type: "text", Text: "readable text"},
+	}
+	content, _ := json.Marshal(blocks)
+
+	messages := []types.Message{
+		{Role: "user", Content: content},
+	}
+
+	result := convertMessages(messages, "")
+
+	if len(result) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(result))
+	}
+	contentStr, ok := result[0].Content.(string)
+	if !ok {
+		t.Fatal("expected content to be string")
+	}
+	if contentStr != "readable text" {
+		t.Errorf("expected only readable text, got: %s", contentStr)
+	}
+}
+
+func TestOllamaConvertMessages_ImageWithBase64(t *testing.T) {
+	blocks := []types.ContentBlock{
+		{Type: "image", Data: "base64image123", MediaType: "image/png"},
+	}
+	content, _ := json.Marshal(blocks)
+
+	messages := []types.Message{
+		{Role: "user", Content: content},
+	}
+
+	result := convertMessages(messages, "")
+
+	if len(result) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(result))
+	}
+	parts, ok := result[0].Content.([]contentPart)
+	if !ok || len(parts) != 1 {
+		t.Fatal("expected one content part")
+	}
+	if !strings.HasPrefix(parts[0].ImageURL.URL, "data:image/png;base64,") {
+		t.Errorf("expected base64 data URL, got %s", parts[0].ImageURL.URL)
+	}
+}
+
+func TestOllamaConvertTools_FunctionTools(t *testing.T) {
+	tools := []types.ToolDefinition{
+		{
+			Name:        "tool1",
+			Description: "First tool",
+			InputSchema: json.RawMessage(`{"type":"object"}`),
+		},
+		{
+			Name:        "tool2",
+			Description: "Second tool",
+			InputSchema: json.RawMessage(`{"type":"object"}`),
+		},
+	}
+
+	result := convertTools(tools, nil)
+
+	if len(result) != 2 {
+		t.Fatalf("expected 2 tools, got %d", len(result))
+	}
+	if result[0].Function.Name != "tool1" || result[1].Function.Name != "tool2" {
+		t.Errorf("unexpected tool names: %v", result)
+	}
+}
+
+func TestOllamaBuildRequest_WithMaxTokens(t *testing.T) {
+	req := &types.CompletionRequest{
+		Model:     "llama3",
+		MaxTokens: 500,
+		Messages:  []types.Message{{Role: "user", Content: json.RawMessage(`"Hi"`)}},
+	}
+
+	body := buildRequest(req, false, nil)
+
+	var parsed map[string]interface{}
+	json.Unmarshal(body, &parsed)
+
+	if parsed["max_tokens"] != float64(500) {
+		t.Errorf("expected max_tokens=500, got %v", parsed["max_tokens"])
+	}
+}
+
+func TestOllamaBuildRequest_WithTemperature(t *testing.T) {
+	req := &types.CompletionRequest{
+		Model:       "llama3",
+		Temperature: 0.9,
+		Messages:    []types.Message{{Role: "user", Content: json.RawMessage(`"Hi"`)}},
+	}
+
+	body := buildRequest(req, false, nil)
+
+	var parsed map[string]interface{}
+	json.Unmarshal(body, &parsed)
+
+	if parsed["temperature"] != float64(0.9) {
+		t.Errorf("expected temperature=0.9, got %v", parsed["temperature"])
+	}
+}
+
+func TestOllamaBuildRequest_NilTemperature(t *testing.T) {
+	req := &types.CompletionRequest{
+		Model:       "llama3",
+		Temperature: 0,
+		Messages:    []types.Message{{Role: "user", Content: json.RawMessage(`"Hi"`)}},
+	}
+
+	body := buildRequest(req, false, nil)
+
+	var parsed map[string]interface{}
+	json.Unmarshal(body, &parsed)
+
+	if _, exists := parsed["temperature"]; exists {
+		t.Error("expected temperature to be omitted when 0")
+	}
+}
+
+func TestOllamaParseSSEStream_MultipleChoices(t *testing.T) {
+	sseData := `data: {"id":"chatcmpl-multi","model":"llama3","choices":[{"index":0,"delta":{"content":"First"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-multi","model":"llama3","choices":[{"index":1,"delta":{"content":"Second"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-multi","model":"llama3","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+
+data: [DONE]
+
+`
+
+	events := make(chan types.StreamEvent, 20)
+	go func() {
+		defer close(events)
+		parseSSEStream(strings.NewReader(sseData), events)
+	}()
+
+	var deltas []string
+	for e := range events {
+		if e.Type == types.StreamEventDelta {
+			deltas = append(deltas, e.Content)
+		}
+	}
+
+	if len(deltas) != 2 {
+		t.Errorf("expected 2 deltas, got %d", len(deltas))
+	}
+}
+
+func TestOllamaParseSSEStream_EmptyContentDelta(t *testing.T) {
+	sseData := `data: {"id":"chatcmpl-empty","model":"llama3","choices":[{"index":0,"delta":{"content":""},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-empty","model":"llama3","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+
+data: [DONE]
+
+`
+
+	events := make(chan types.StreamEvent, 20)
+	go func() {
+		defer close(events)
+		parseSSEStream(strings.NewReader(sseData), events)
+	}()
+
+	count := 0
+	for e := range events {
+		if e.Type == types.StreamEventDelta {
+			count++
+		}
+	}
+
+	if count != 0 {
+		t.Errorf("expected 0 deltas for empty content, got %d", count)
+	}
+}
+
+func TestOllamaParseSSEStream_UnknownField(t *testing.T) {
+	sseData := `data: {"id":"chatcmpl-unk","model":"llama3","choices":[{"index":0,"delta":{"content":"Hi"}}],"unknown_field":"should be ignored"}
+
+data: {"id":"chatcmpl-unk","model":"llama3","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+
+data: [DONE]
+
+`
+
+	events := make(chan types.StreamEvent, 20)
+	go func() {
+		defer close(events)
+		parseSSEStream(strings.NewReader(sseData), events)
+	}()
+
+	var text string
+	for e := range events {
+		if e.Type == types.StreamEventDelta {
+			text += e.Content
+		}
+	}
+
+	if text != "Hi" {
+		t.Errorf("expected 'Hi', got '%s'", text)
+	}
+}
+
+func TestOllamaDoRequest_NoAuthHeaderWhenNoKey(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if auth := r.Header.Get("Authorization"); auth != "" {
+			t.Errorf("expected no Authorization header, got %s", auth)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"id":"test","model":"llama3","choices":[]}`))
+	}))
+	defer server.Close()
+
+	p := NewOllama(server.URL)
+	p.apiKey = ""
+	_, _ = p.Complete(context.Background(), &types.CompletionRequest{
+		Model:    "llama3",
+		Messages: []types.Message{{Role: "user", Content: json.RawMessage(`"hi"`)}},
+	})
+}
+
+func TestOllamaDoRequest_WithAuthHeader(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		auth := r.Header.Get("Authorization")
+		if auth != "Bearer my-secret-key" {
+			t.Errorf("expected 'Bearer my-secret-key', got %s", auth)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"id":"test","model":"llama3","choices":[]}`))
+	}))
+	defer server.Close()
+
+	p := NewOllama(server.URL)
+	p.apiKey = "my-secret-key"
+	_, _ = p.Complete(context.Background(), &types.CompletionRequest{
+		Model:    "llama3",
+		Messages: []types.Message{{Role: "user", Content: json.RawMessage(`"hi"`)}},
+	})
+}
+
+func strPtr(s string) *string { return &s }
