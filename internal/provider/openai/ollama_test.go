@@ -498,56 +498,6 @@ func TestOllamaConvertTools_EmptyTools(t *testing.T) {
 	}
 }
 
-func TestDefaultContextWindow(t *testing.T) {
-	tests := []struct {
-		model    string
-		expected int
-	}{
-		{"llama4", 1000000},
-		{"llama3.1", 128000},
-		{"llama3.2-vision", 128000},
-		{"llama3.2", 128000},
-		{"llama3.3", 128000},
-		{"llama3-gradient", 1000000},
-		{"llama3", 8192},
-		{"llama2", 4096},
-		{"qwen3", 32768},
-		{"qwen2.5", 32768},
-		{"qwen2", 32768},
-		{"qwen", 32768},
-		{"mistral-large", 128000},
-		{"mistral-small3", 128000},
-		{"mistral", 32768},
-		{"mixtral", 32768},
-		{"codestral", 32768},
-		{"gemma3", 32768},
-		{"gemma2", 8192},
-		{"gemma", 8192},
-		{"deepseek-v3", 64000},
-		{"deepseek-r1", 64000},
-		{"deepseek-coder", 16384},
-		{"deepseek", 4096},
-		{"phi4", 16384},
-		{"phi3", 128000},
-		{"phi", 2048},
-		{"codellama", 16384},
-		{"starcoder", 16384},
-		{"yi", 32768},
-		{"kimi", 128000},
-		{"llava", 4096},
-		{"unknown-model", 4096},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.model, func(t *testing.T) {
-			got := defaultContextWindow(tt.model)
-			if got != tt.expected {
-				t.Errorf("defaultContextWindow(%q) = %d, want %d", tt.model, got, tt.expected)
-			}
-		})
-	}
-}
-
 func TestOllamaConvertResponse_EmptyChoices(t *testing.T) {
 	resp := &chatCompletionResponse{
 		ID:      "chatcmpl-empty",

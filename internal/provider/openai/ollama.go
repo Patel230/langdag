@@ -48,6 +48,43 @@ type ollamaShowResponse struct {
 	} `json:"capabilities"`
 }
 
+var contextWindowCache = sync.Map{}
+
+func (p *ollamaProvider) getContextWindow(modelName string) int {
+	if cached, ok := contextWindowCache.Load(modelName); ok {
+		return cached.(int)
+	}
+
+	ctx := context.Background()
+	url := p.baseURL + "/api/show"
+
+	body, _ := json.Marshal(map[string]string{"name": modelName})
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
+	if err != nil {
+		return 0
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := p.client.Do(httpReq)
+	if err != nil {
+		return 0
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return 0
+	}
+
+	var showResp ollamaShowResponse
+	if err := json.NewDecoder(resp.Body).Decode(&showResp); err != nil {
+		return 0
+	}
+
+	contextWindow := showResp.Capabilities.NumCtx
+	contextWindowCache.Store(modelName, contextWindow)
+	return contextWindow
+}
+
 func (p *ollamaProvider) Models() []types.ModelInfo {
 	ctx := context.Background()
 	url := p.baseURL + "/api/tags"
@@ -77,81 +114,10 @@ func (p *ollamaProvider) Models() []types.ModelInfo {
 		models = append(models, types.ModelInfo{
 			ID:            m.Name,
 			Name:          m.Name,
-			ContextWindow: p.estimateContextWindow(m.Name),
+			ContextWindow: p.getContextWindow(m.Name),
 		})
 	}
 	return models
-}
-
-func (p *ollamaProvider) estimateContextWindow(modelName string) int {
-	ctx := context.Background()
-	url := p.baseURL + "/api/show"
-
-	body, _ := json.Marshal(map[string]string{"name": modelName})
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
-	if err != nil {
-		return defaultContextWindow(modelName)
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-
-	resp, err := p.client.Do(httpReq)
-	if err != nil {
-		return defaultContextWindow(modelName)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return defaultContextWindow(modelName)
-	}
-
-	var showResp ollamaShowResponse
-	if err := json.NewDecoder(resp.Body).Decode(&showResp); err != nil {
-		return defaultContextWindow(modelName)
-	}
-
-	if showResp.Capabilities.NumCtx > 0 {
-		return showResp.Capabilities.NumCtx
-	}
-	return defaultContextWindow(modelName)
-}
-
-var contextWindowCache = sync.Map{}
-
-func (p *ollamaProvider) getContextWindowWithCache(modelName string) int {
-	if cached, ok := contextWindowCache.Load(modelName); ok {
-		return cached.(int)
-	}
-	ctx := context.Background()
-	url := p.baseURL + "/api/show"
-
-	body, _ := json.Marshal(map[string]string{"name": modelName})
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
-	if err != nil {
-		return defaultContextWindow(modelName)
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-
-	resp, err := p.client.Do(httpReq)
-	if err != nil {
-		return defaultContextWindow(modelName)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return defaultContextWindow(modelName)
-	}
-
-	var showResp ollamaShowResponse
-	if err := json.NewDecoder(resp.Body).Decode(&showResp); err != nil {
-		return defaultContextWindow(modelName)
-	}
-
-	contextWindow := showResp.Capabilities.NumCtx
-	if contextWindow == 0 {
-		contextWindow = defaultContextWindow(modelName)
-	}
-	contextWindowCache.Store(modelName, contextWindow)
-	return contextWindow
 }
 
 func (p *ollamaProvider) Complete(ctx context.Context, req *types.CompletionRequest) (*types.CompletionResponse, error) {
@@ -212,71 +178,4 @@ func (p *ollamaProvider) doRequest(ctx context.Context, body []byte) (io.ReadClo
 	}
 
 	return resp.Body, nil
-}
-
-func defaultContextWindow(modelName string) int {
-	nameLower := strings.ToLower(modelName)
-
-	switch {
-	case strings.Contains(nameLower, "llama4"):
-		return 1000000
-	case strings.Contains(nameLower, "llama3.1"):
-		return 128000
-	case strings.Contains(nameLower, "llama3.2-vision"), strings.Contains(nameLower, "llama3.2"):
-		return 128000
-	case strings.Contains(nameLower, "llama3.3"):
-		return 128000
-	case strings.Contains(nameLower, "llama3-gradient"):
-		return 1000000
-	case strings.Contains(nameLower, "llama3"):
-		return 8192
-	case strings.Contains(nameLower, "llama2"):
-		return 4096
-	case strings.Contains(nameLower, "qwen3"):
-		return 32768
-	case strings.Contains(nameLower, "qwen2.5"), strings.Contains(nameLower, "qwen2"):
-		return 32768
-	case strings.Contains(nameLower, "qwen"):
-		return 32768
-	case strings.Contains(nameLower, "mistral-large"), strings.Contains(nameLower, "mistral-small3"), strings.Contains(nameLower, "mistral-nemo"):
-		return 128000
-	case strings.Contains(nameLower, "mistral"), strings.Contains(nameLower, "mixtral"), strings.Contains(nameLower, "codestral"), strings.Contains(nameLower, "mathstral"):
-		return 32768
-	case strings.Contains(nameLower, "gemma3"):
-		return 32768
-	case strings.Contains(nameLower, "gemma2"), strings.Contains(nameLower, "gemma"):
-		return 8192
-	case strings.Contains(nameLower, "deepseek-v3"), strings.Contains(nameLower, "deepseek-r1"):
-		return 64000
-	case strings.Contains(nameLower, "deepseek-coder"):
-		return 16384
-	case strings.Contains(nameLower, "deepseek"):
-		return 4096
-	case strings.Contains(nameLower, "phi4"):
-		return 16384
-	case strings.Contains(nameLower, "phi3"):
-		return 128000
-	case strings.Contains(nameLower, "phi"):
-		return 2048
-	case strings.Contains(nameLower, "lfm"), strings.Contains(nameLower, "glm"), strings.Contains(nameLower, "granite"):
-		return 32768
-	case strings.Contains(nameLower, "nemotron"):
-		return 4096
-	case strings.Contains(nameLower, "command-"):
-		return 128000
-	case strings.Contains(nameLower, "codellama"), strings.Contains(nameLower, "starcoder"), strings.Contains(nameLower, "yi-coder"):
-		return 16384
-	case strings.Contains(nameLower, "yi"), strings.Contains(nameLower, "zephyr"), strings.Contains(nameLower, "cogito"), strings.Contains(nameLower, "devstral"):
-		return 32768
-	case strings.Contains(nameLower, "kimi"):
-		return 128000
-	case strings.Contains(nameLower, "llava"), strings.Contains(nameLower, "bakllava"):
-		return 4096
-	case strings.Contains(nameLower, "minicpm-v"):
-		return 8192
-	case strings.Contains(nameLower, "embed"), strings.Contains(nameLower, "nomic"):
-		return 8192
-	default:
-		return 4096
-	}
 }
