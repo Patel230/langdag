@@ -16,7 +16,6 @@ import (
 	"langdag.com/langdag/internal/provider/anthropic"
 	geminiprovider "langdag.com/langdag/internal/provider/gemini"
 	mockprovider "langdag.com/langdag/internal/provider/mock"
-	ollamaprovider "langdag.com/langdag/internal/provider/openai"
 	openaiprovider "langdag.com/langdag/internal/provider/openai"
 	"langdag.com/langdag/internal/storage/sqlite"
 )
@@ -247,7 +246,7 @@ var providerRegistry = map[string]providerFactory{
 		if c.Providers.Ollama.BaseURL != "" {
 			baseURL = c.Providers.Ollama.BaseURL
 		}
-		return ollamaprovider.NewOllama(baseURL), nil
+		return openaiprovider.NewOllama(baseURL), nil
 	},
 	"gemini": func(_ context.Context, c *config.Config) (provider.Provider, error) {
 		if c.Providers.Gemini.APIKey == "" {
