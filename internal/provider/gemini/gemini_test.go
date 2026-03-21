@@ -168,6 +168,66 @@ func TestConvertResponse_FunctionCall(t *testing.T) {
 	if result.Content[0].Name != "search" {
 		t.Errorf("expected name 'search', got %s", result.Content[0].Name)
 	}
+	if result.Content[0].ID != "search" {
+		t.Errorf("expected ID 'search', got %s", result.Content[0].ID)
+	}
+}
+
+func TestConvertResponse_ToolUseID(t *testing.T) {
+	// Regression test: Gemini doesn't provide unique tool call IDs, so the
+	// adapter must set ID = FunctionCall.Name. Without this, downstream
+	// tool_result blocks send function_response with Name="" and Gemini
+	// returns 400 INVALID_ARGUMENT.
+	resp := &geminiResponse{
+		Candidates: []candidate{{
+			Content: content{
+				Parts: []part{
+					{Text: "I'll search for that"},
+					{FunctionCall: &functionCall{
+						Name: "get_weather",
+						Args: map[string]interface{}{"location": "Paris"},
+					}},
+					{FunctionCall: &functionCall{
+						Name: "get_time",
+						Args: map[string]interface{}{"timezone": "CET"},
+					}},
+				},
+			},
+		}},
+	}
+
+	result := convertResponse(resp)
+
+	if len(result.Content) != 3 {
+		t.Fatalf("expected 3 content blocks, got %d", len(result.Content))
+	}
+
+	// Text block
+	if result.Content[0].Type != "text" {
+		t.Errorf("expected text block, got %s", result.Content[0].Type)
+	}
+
+	// First tool_use
+	if result.Content[1].ID == "" {
+		t.Error("tool_use block ID should not be empty")
+	}
+	if result.Content[1].ID != "get_weather" {
+		t.Errorf("expected ID 'get_weather', got %s", result.Content[1].ID)
+	}
+	if result.Content[1].Name != "get_weather" {
+		t.Errorf("expected Name 'get_weather', got %s", result.Content[1].Name)
+	}
+
+	// Second tool_use
+	if result.Content[2].ID == "" {
+		t.Error("tool_use block ID should not be empty")
+	}
+	if result.Content[2].ID != "get_time" {
+		t.Errorf("expected ID 'get_time', got %s", result.Content[2].ID)
+	}
+	if result.Content[2].Name != "get_time" {
+		t.Errorf("expected Name 'get_time', got %s", result.Content[2].Name)
+	}
 }
 
 func TestParseSSEStream(t *testing.T) {
@@ -331,6 +391,9 @@ data: {"candidates":[{"content":{"parts":[{"functionCall":{"name":"search","args
 	for _, block := range done.Response.Content {
 		if block.Type == "tool_use" && block.Name == "search" {
 			hasToolUse = true
+			if block.ID != "search" {
+				t.Errorf("expected ID 'search' in done response, got %s", block.ID)
+			}
 			var args map[string]interface{}
 			if err := json.Unmarshal(block.Input, &args); err != nil {
 				t.Fatalf("failed to unmarshal tool input: %v", err)
@@ -343,6 +406,79 @@ data: {"candidates":[{"content":{"parts":[{"functionCall":{"name":"search","args
 	}
 	if !hasToolUse {
 		t.Errorf("expected at least one tool_use block in done response, got content: %+v", done.Response.Content)
+	}
+
+	// ContentDone events should also have ID set
+	for _, e := range collected {
+		if e.Type == types.StreamEventContentDone && e.ContentBlock != nil && e.ContentBlock.Type == "tool_use" {
+			if e.ContentBlock.ID != "search" {
+				t.Errorf("expected ContentDone block ID 'search', got %s", e.ContentBlock.ID)
+			}
+		}
+	}
+}
+
+func TestParseSSEStream_ToolUseID(t *testing.T) {
+	// Regression test: streamed ContentDone blocks and the final Done response
+	// must contain a non-empty ID equal to the function name, otherwise Gemini
+	// rejects downstream function_response payloads with 400 INVALID_ARGUMENT.
+	sseData := `data: {"candidates":[{"content":{"parts":[{"functionCall":{"name":"get_weather","args":{"location":"Paris"}}}]}}],"usageMetadata":{"promptTokenCount":5,"candidatesTokenCount":3}}
+
+data: {"candidates":[{"content":{"parts":[{"functionCall":{"name":"get_weather","args":{"location":"Paris"}}}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":5,"candidatesTokenCount":3}}
+
+`
+
+	events := make(chan types.StreamEvent, 20)
+	go func() {
+		defer close(events)
+		parseSSEStream(strings.NewReader(sseData), events)
+	}()
+
+	var contentDoneBlocks []*types.ContentBlock
+	var doneResp *types.CompletionResponse
+	for e := range events {
+		if e.Type == types.StreamEventContentDone && e.ContentBlock != nil {
+			contentDoneBlocks = append(contentDoneBlocks, e.ContentBlock)
+		}
+		if e.Type == types.StreamEventDone {
+			doneResp = e.Response
+		}
+	}
+
+	// Verify ContentDone events
+	if len(contentDoneBlocks) == 0 {
+		t.Fatal("expected at least one ContentDone event with tool_use block")
+	}
+	for i, block := range contentDoneBlocks {
+		if block.ID == "" {
+			t.Errorf("ContentDone block[%d]: ID should not be empty", i)
+		}
+		if block.ID != "get_weather" {
+			t.Errorf("ContentDone block[%d]: expected ID 'get_weather', got %s", i, block.ID)
+		}
+		if block.Name != "get_weather" {
+			t.Errorf("ContentDone block[%d]: expected Name 'get_weather', got %s", i, block.Name)
+		}
+	}
+
+	// Verify Done response
+	if doneResp == nil {
+		t.Fatal("expected done response")
+	}
+	hasToolUse := false
+	for _, block := range doneResp.Content {
+		if block.Type == "tool_use" {
+			hasToolUse = true
+			if block.ID == "" {
+				t.Error("Done response tool_use block ID should not be empty")
+			}
+			if block.ID != "get_weather" {
+				t.Errorf("Done response: expected ID 'get_weather', got %s", block.ID)
+			}
+		}
+	}
+	if !hasToolUse {
+		t.Error("expected tool_use block in Done response")
 	}
 }
 
