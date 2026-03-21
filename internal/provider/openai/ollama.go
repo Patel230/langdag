@@ -91,9 +91,7 @@ func (p *OllamaProvider) getContextWindow(modelName string) int {
 }
 
 // Models returns all locally available Ollama models.
-// Context windows are fetched sequentially via /api/show — one call per model.
-// This is acceptable for typical local setups (few models), but could be
-// parallelized if needed for large model libraries.
+// Context windows are fetched in parallel via /api/show, one goroutine per model.
 func (p *OllamaProvider) Models() []types.ModelInfo {
 	ctx := context.Background()
 	url := p.baseURL + "/api/tags"
@@ -118,14 +116,20 @@ func (p *OllamaProvider) Models() []types.ModelInfo {
 		return nil
 	}
 
-	models := make([]types.ModelInfo, 0, len(tagsResp.Models))
-	for _, m := range tagsResp.Models {
-		models = append(models, types.ModelInfo{
-			ID:            m.Name,
-			Name:          m.Name,
-			ContextWindow: p.getContextWindow(m.Name),
-		})
+	models := make([]types.ModelInfo, len(tagsResp.Models))
+	var wg sync.WaitGroup
+	for i, m := range tagsResp.Models {
+		wg.Add(1)
+		go func(i int, name string) {
+			defer wg.Done()
+			models[i] = types.ModelInfo{
+				ID:            name,
+				Name:          name,
+				ContextWindow: p.getContextWindow(name),
+			}
+		}(i, m.Name)
 	}
+	wg.Wait()
 	return models
 }
 
