@@ -17,7 +17,6 @@ import (
 // Ollama is a local LLM server with an OpenAI-compatible API at /v1/chat/completions.
 type OllamaProvider struct {
 	baseURL            string
-	apiKey             string
 	client             *http.Client
 	contextWindowCache sync.Map
 }
@@ -33,14 +32,6 @@ func NewOllama(baseURL string) *OllamaProvider {
 	}
 }
 
-// NewOllamaWithAPIKey creates an Ollama provider with an optional API key.
-// Useful when Ollama is deployed behind a reverse proxy that requires auth.
-func NewOllamaWithAPIKey(baseURL, apiKey string) *OllamaProvider {
-	p := NewOllama(baseURL)
-	p.apiKey = apiKey
-	return p
-}
-
 func (p *OllamaProvider) Name() string {
 	return "ollama"
 }
@@ -54,7 +45,6 @@ type ollamaTagsResponse struct {
 type ollamaShowResponse struct {
 	ModelInfo map[string]interface{} `json:"model_info"`
 }
-
 
 func (p *OllamaProvider) getContextWindow(modelName string) int {
 	if cached, ok := p.contextWindowCache.Load(modelName); ok {
@@ -100,6 +90,10 @@ func (p *OllamaProvider) getContextWindow(modelName string) int {
 	return 0
 }
 
+// Models returns all locally available Ollama models.
+// Context windows are fetched sequentially via /api/show — one call per model.
+// This is acceptable for typical local setups (few models), but could be
+// parallelized if needed for large model libraries.
 func (p *OllamaProvider) Models() []types.ModelInfo {
 	ctx := context.Background()
 	url := p.baseURL + "/api/tags"
@@ -177,9 +171,6 @@ func (p *OllamaProvider) doRequest(ctx context.Context, body []byte) (io.ReadClo
 	}
 
 	httpReq.Header.Set("Content-Type", "application/json")
-	if p.apiKey != "" {
-		httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
-	}
 
 	resp, err := p.client.Do(httpReq)
 	if err != nil {

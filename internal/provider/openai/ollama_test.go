@@ -40,31 +40,6 @@ func TestOllamaBaseURLTrimming(t *testing.T) {
 	}
 }
 
-func TestOllamaAPIKeyNotSet(t *testing.T) {
-	p := NewOllama("http://localhost:11434")
-	if p.apiKey != "" {
-		t.Errorf("expected empty API key, got '%s'", p.apiKey)
-	}
-}
-
-func TestOllamaWithAPIKey(t *testing.T) {
-	p := NewOllama("http://localhost:11434")
-	p.apiKey = "test-key"
-	if p.apiKey != "test-key" {
-		t.Errorf("expected API key 'test-key', got '%s'", p.apiKey)
-	}
-}
-
-func TestNewOllamaWithAPIKey(t *testing.T) {
-	p := NewOllamaWithAPIKey("http://localhost:11434", "my-proxy-key")
-	if p.apiKey != "my-proxy-key" {
-		t.Errorf("expected API key 'my-proxy-key', got '%s'", p.apiKey)
-	}
-	if p.baseURL != "http://localhost:11434" {
-		t.Errorf("expected base URL 'http://localhost:11434', got '%s'", p.baseURL)
-	}
-}
-
 func TestOllamaModels_EmptyResponse(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/tags" {
@@ -155,7 +130,7 @@ func TestOllamaModels_APIError(t *testing.T) {
 	}
 }
 
-func TestOllamaDoRequest_NoAuthHeaderWhenNoKey(t *testing.T) {
+func TestOllamaDoRequest_NoAuthHeader(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if auth := r.Header.Get("Authorization"); auth != "" {
 			t.Errorf("expected no Authorization header, got %s", auth)
@@ -166,26 +141,6 @@ func TestOllamaDoRequest_NoAuthHeaderWhenNoKey(t *testing.T) {
 	defer server.Close()
 
 	p := NewOllama(server.URL)
-	p.apiKey = ""
-	_, _ = p.Complete(context.Background(), &types.CompletionRequest{
-		Model:    "llama3",
-		Messages: []types.Message{{Role: "user", Content: json.RawMessage(`"hi"`)}},
-	})
-}
-
-func TestOllamaDoRequest_WithAuthHeader(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		auth := r.Header.Get("Authorization")
-		if auth != "Bearer my-secret-key" {
-			t.Errorf("expected 'Bearer my-secret-key', got %s", auth)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"id":"test","model":"llama3","choices":[]}`))
-	}))
-	defer server.Close()
-
-	p := NewOllama(server.URL)
-	p.apiKey = "my-secret-key"
 	_, _ = p.Complete(context.Background(), &types.CompletionRequest{
 		Model:    "llama3",
 		Messages: []types.Message{{Role: "user", Content: json.RawMessage(`"hi"`)}},
