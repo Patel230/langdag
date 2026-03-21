@@ -45,7 +45,7 @@ type Config struct {
 	StoragePath string
 
 	// Provider is the default LLM provider to use.
-	// Valid values: "anthropic", "openai", "gemini", "grok",
+	// Valid values: "anthropic", "openai", "gemini", "grok", "ollama",
 	// "anthropic-vertex", "anthropic-bedrock", "openai-azure", "gemini-vertex"
 	// Defaults to "anthropic"
 	Provider string
@@ -74,6 +74,9 @@ type Config struct {
 
 	// BedrockConfig holds AWS Bedrock config.
 	BedrockConfig *BedrockConfig
+
+	// OllamaConfig holds Ollama-specific config (local LLM server).
+	OllamaConfig *OllamaConfig
 
 	// Routing configures multi-provider routing (optional).
 	Routing []RoutingEntry
@@ -116,6 +119,13 @@ type VertexConfig struct {
 // BedrockConfig holds AWS Bedrock configuration.
 type BedrockConfig struct {
 	Region string
+}
+
+// OllamaConfig holds Ollama-specific configuration.
+// Ollama is a local LLM server that provides an OpenAI-compatible API.
+type OllamaConfig struct {
+	// BaseURL is the Ollama server address (e.g., "http://localhost:11434" or "http://100.93.184.1:11434")
+	BaseURL string
 }
 
 // GrokConfig holds Grok (xAI)-specific configuration.
@@ -595,6 +605,13 @@ func createSingleProvider(ctx context.Context, name string, cfg Config) (interna
 			return nil, fmt.Errorf("langdag: VertexConfig.ProjectID and VertexConfig.Region must be set for gemini-vertex")
 		}
 		return geminiprovider.NewVertex(ctx, vc.ProjectID, vc.Region)
+
+	case "ollama":
+		baseURL := "http://localhost:11434"
+		if cfg.OllamaConfig != nil && cfg.OllamaConfig.BaseURL != "" {
+			baseURL = cfg.OllamaConfig.BaseURL
+		}
+		return openaiprovider.NewOllama(baseURL), nil
 
 	default:
 		return nil, fmt.Errorf("langdag: unknown provider: %s", name)

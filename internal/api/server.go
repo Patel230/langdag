@@ -14,8 +14,8 @@ import (
 	"langdag.com/langdag/internal/conversation"
 	"langdag.com/langdag/internal/provider"
 	"langdag.com/langdag/internal/provider/anthropic"
-	mockprovider "langdag.com/langdag/internal/provider/mock"
 	geminiprovider "langdag.com/langdag/internal/provider/gemini"
+	mockprovider "langdag.com/langdag/internal/provider/mock"
 	openaiprovider "langdag.com/langdag/internal/provider/openai"
 	"langdag.com/langdag/internal/storage/sqlite"
 )
@@ -240,6 +240,9 @@ var providerRegistry = map[string]providerFactory{
 			return nil, fmt.Errorf("XAI_API_KEY not set")
 		}
 		return openaiprovider.NewGrok(c.Providers.Grok.APIKey, c.Providers.Grok.BaseURL), nil
+	},
+	"ollama": func(_ context.Context, c *config.Config) (provider.Provider, error) {
+		return openaiprovider.NewOllama(c.Providers.Ollama.BaseURL), nil
 	},
 	"gemini": func(_ context.Context, c *config.Config) (provider.Provider, error) {
 		if c.Providers.Gemini.APIKey == "" {
