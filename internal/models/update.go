@@ -10,6 +10,15 @@ import (
 	"time"
 )
 
+// providerServerTools maps provider names to the server tools their models support.
+// Used to annotate fetched catalog entries with capability metadata.
+var providerServerTools = map[string][]string{
+	"anthropic": {"web_search"},
+	"openai":    {"web_search"},
+	"gemini":    {"web_search"},
+	"grok":      {"web_search"},
+}
+
 // FetchLatest fetches the latest model catalog from official provider documentation pages.
 // All provider fetches must succeed; partial failures return an error.
 func FetchLatest(ctx context.Context) (*Catalog, error) {
@@ -71,6 +80,12 @@ func FetchLatest(ctx context.Context) (*Catalog, error) {
 		for _, m := range r.models {
 			if (m.InputPricePer1M > 0 || m.OutputPricePer1M > 0) && m.ContextWindow > 0 {
 				filtered = append(filtered, m)
+			}
+		}
+		// Annotate with known server tool capabilities.
+		if st := providerServerTools[r.provider]; len(st) > 0 {
+			for i := range filtered {
+				filtered[i].ServerTools = st
 			}
 		}
 		slices.SortFunc(filtered, func(a, b ModelPricing) int {

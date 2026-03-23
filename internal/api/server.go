@@ -304,7 +304,7 @@ func createProvider(ctx context.Context, appConfig *config.Config) (provider.Pro
 	}
 
 	log.Printf("Using provider: %s", name)
-	return provider.WithRetry(prov, globalRetry), nil
+	return provider.WithRetry(provider.WithServerToolFilter(prov), globalRetry), nil
 }
 
 // createRouter builds a Router from the routing and fallback config.
@@ -339,9 +339,9 @@ func createRouter(ctx context.Context, appConfig *config.Config, globalRetry pro
 			log.Printf("Skipping unavailable provider in routing: %s", re.Provider)
 			continue
 		}
-		// Wrap with per-provider retry
+		// Wrap with server tool filter and per-provider retry
 		retryCfg := parseRetryConfig(re.Retry, globalRetry)
-		wrapped := provider.WithRetry(p, retryCfg)
+		wrapped := provider.WithRetry(provider.WithServerToolFilter(p), retryCfg)
 		entries = append(entries, provider.RouteEntry{Provider: wrapped, Weight: re.Weight})
 		log.Printf("Routing: %s (weight=%d)", re.Provider, re.Weight)
 	}
@@ -357,7 +357,7 @@ func createRouter(ctx context.Context, appConfig *config.Config, globalRetry pro
 			log.Printf("Skipping unavailable provider in fallback: %s", name)
 			continue
 		}
-		wrapped := provider.WithRetry(p, globalRetry)
+		wrapped := provider.WithRetry(provider.WithServerToolFilter(p), globalRetry)
 		fallbackProviders = append(fallbackProviders, wrapped)
 		log.Printf("Fallback: %s", name)
 	}

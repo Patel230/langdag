@@ -39,10 +39,11 @@ func (p *Provider) Name() string {
 
 // Models returns the available models.
 func (p *Provider) Models() []types.ModelInfo {
+	st := []string{types.ServerToolWebSearch}
 	return []types.ModelInfo{
-		{ID: "gpt-4o", Name: "GPT-4o", ContextWindow: 128000, MaxOutput: 16384},
-		{ID: "gpt-4o-mini", Name: "GPT-4o Mini", ContextWindow: 128000, MaxOutput: 16384},
-		{ID: "o3-mini", Name: "o3-mini", ContextWindow: 200000, MaxOutput: 100000},
+		{ID: "gpt-4o", Name: "GPT-4o", ContextWindow: 128000, MaxOutput: 16384, ServerTools: st},
+		{ID: "gpt-4o-mini", Name: "GPT-4o Mini", ContextWindow: 128000, MaxOutput: 16384, ServerTools: st},
+		{ID: "o3-mini", Name: "o3-mini", ContextWindow: 200000, MaxOutput: 100000, ServerTools: st},
 	}
 }
 

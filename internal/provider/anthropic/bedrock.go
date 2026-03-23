@@ -30,10 +30,11 @@ func (p *BedrockProvider) Name() string {
 
 // Models returns the available models.
 func (p *BedrockProvider) Models() []types.ModelInfo {
+	st := []string{types.ServerToolWebSearch}
 	return []types.ModelInfo{
-		{ID: "anthropic.claude-sonnet-4-20250514-v1:0", Name: "Claude Sonnet 4 (Bedrock)", ContextWindow: 200000, MaxOutput: 8192},
-		{ID: "anthropic.claude-opus-4-20250514-v1:0", Name: "Claude Opus 4 (Bedrock)", ContextWindow: 200000, MaxOutput: 8192},
-		{ID: "anthropic.claude-3-5-haiku-20241022-v1:0", Name: "Claude Haiku 3.5 (Bedrock)", ContextWindow: 200000, MaxOutput: 8192},
+		{ID: "anthropic.claude-sonnet-4-20250514-v1:0", Name: "Claude Sonnet 4 (Bedrock)", ContextWindow: 200000, MaxOutput: 8192, ServerTools: st},
+		{ID: "anthropic.claude-opus-4-20250514-v1:0", Name: "Claude Opus 4 (Bedrock)", ContextWindow: 200000, MaxOutput: 8192, ServerTools: st},
+		{ID: "anthropic.claude-3-5-haiku-20241022-v1:0", Name: "Claude Haiku 3.5 (Bedrock)", ContextWindow: 200000, MaxOutput: 8192, ServerTools: st},
 	}
 }
 
