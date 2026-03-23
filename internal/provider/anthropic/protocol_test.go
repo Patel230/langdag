@@ -280,21 +280,20 @@ func TestConvertTools_MixedFunctionAndServerTools(t *testing.T) {
 	}
 }
 
-func TestConvertTools_UnknownServerToolErrors(t *testing.T) {
-	// A tool without InputSchema and an unknown name should return an error
+func TestConvertTools_UnknownServerToolSkipped(t *testing.T) {
+	// A tool without InputSchema and an unknown name should be silently skipped
 	tools := []types.ToolDefinition{
 		{
 			Name:        "custom_search",
 			Description: "Custom search",
 		},
 	}
-	_, err := convertTools(tools)
-	if err == nil {
-		t.Fatal("expected error for unknown server tool, got nil")
+	result, err := convertTools(tools)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
-	expected := `anthropic: unsupported server tool "custom_search"`
-	if err.Error() != expected {
-		t.Errorf("error = %q, want %q", err.Error(), expected)
+	if len(result) != 0 {
+		t.Errorf("expected 0 tools after skipping unknown server tool, got %d", len(result))
 	}
 }
 

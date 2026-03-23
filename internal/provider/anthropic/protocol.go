@@ -181,10 +181,10 @@ func convertTools(tools []types.ToolDefinition) ([]anthropic.ToolUnionParam, err
 			continue
 		}
 
-		// Server-side tool
+		// Server-side tool — skip if not supported by Anthropic.
 		ctor, ok := anthropicServerTools[tool.Name]
 		if !ok {
-			return nil, fmt.Errorf("anthropic: unsupported server tool %q", tool.Name)
+			continue
 		}
 		result = append(result, ctor())
 	}

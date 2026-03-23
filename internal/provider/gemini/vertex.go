@@ -43,9 +43,10 @@ func (p *VertexProvider) Name() string {
 
 // Models returns the available models.
 func (p *VertexProvider) Models() []types.ModelInfo {
+	st := []string{types.ServerToolWebSearch}
 	return []types.ModelInfo{
-		{ID: "gemini-2.0-flash", Name: "Gemini 2.0 Flash (Vertex)", ContextWindow: 1048576, MaxOutput: 8192},
-		{ID: "gemini-2.5-pro-preview-05-06", Name: "Gemini 2.5 Pro (Vertex)", ContextWindow: 1048576, MaxOutput: 65536},
+		{ID: "gemini-2.0-flash", Name: "Gemini 2.0 Flash (Vertex)", ContextWindow: 1048576, MaxOutput: 8192, ServerTools: st},
+		{ID: "gemini-2.5-pro-preview-05-06", Name: "Gemini 2.5 Pro (Vertex)", ContextWindow: 1048576, MaxOutput: 65536, ServerTools: st},
 	}
 }
 

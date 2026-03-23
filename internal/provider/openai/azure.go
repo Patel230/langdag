@@ -42,9 +42,10 @@ func (p *AzureProvider) Name() string {
 
 // Models returns the available models.
 func (p *AzureProvider) Models() []types.ModelInfo {
+	st := []string{types.ServerToolWebSearch}
 	return []types.ModelInfo{
-		{ID: "gpt-4o", Name: "GPT-4o (Azure)", ContextWindow: 128000, MaxOutput: 16384},
-		{ID: "gpt-4o-mini", Name: "GPT-4o Mini (Azure)", ContextWindow: 128000, MaxOutput: 16384},
+		{ID: "gpt-4o", Name: "GPT-4o (Azure)", ContextWindow: 128000, MaxOutput: 16384, ServerTools: st},
+		{ID: "gpt-4o-mini", Name: "GPT-4o Mini (Azure)", ContextWindow: 128000, MaxOutput: 16384, ServerTools: st},
 	}
 }
 

@@ -27,10 +27,11 @@ func (p *Provider) Name() string {
 
 // Models returns the available models.
 func (p *Provider) Models() []types.ModelInfo {
+	st := []string{types.ServerToolWebSearch}
 	return []types.ModelInfo{
-		{ID: "claude-sonnet-4-20250514", Name: "Claude Sonnet 4", ContextWindow: 200000, MaxOutput: 8192},
-		{ID: "claude-opus-4-20250514", Name: "Claude Opus 4", ContextWindow: 200000, MaxOutput: 8192},
-		{ID: "claude-haiku-3-5-20241022", Name: "Claude Haiku 3.5", ContextWindow: 200000, MaxOutput: 8192},
+		{ID: "claude-sonnet-4-20250514", Name: "Claude Sonnet 4", ContextWindow: 200000, MaxOutput: 8192, ServerTools: st},
+		{ID: "claude-opus-4-20250514", Name: "Claude Opus 4", ContextWindow: 200000, MaxOutput: 8192, ServerTools: st},
+		{ID: "claude-haiku-3-5-20241022", Name: "Claude Haiku 3.5", ContextWindow: 200000, MaxOutput: 8192, ServerTools: st},
 	}
 }
 

@@ -41,9 +41,10 @@ func (p *GrokProvider) Name() string {
 
 // Models returns the available Grok models.
 func (p *GrokProvider) Models() []types.ModelInfo {
+	st := []string{types.ServerToolWebSearch}
 	return []types.ModelInfo{
-		{ID: "grok-3", Name: "Grok 3", ContextWindow: 131072, MaxOutput: 16384},
-		{ID: "grok-3-mini", Name: "Grok 3 Mini", ContextWindow: 131072, MaxOutput: 16384},
+		{ID: "grok-3", Name: "Grok 3", ContextWindow: 131072, MaxOutput: 16384, ServerTools: st},
+		{ID: "grok-3-mini", Name: "Grok 3 Mini", ContextWindow: 131072, MaxOutput: 16384, ServerTools: st},
 	}
 }
 

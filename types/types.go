@@ -184,8 +184,9 @@ type StreamEvent struct {
 
 // ModelInfo represents information about a model.
 type ModelInfo struct {
-	ID            string `json:"id"`
-	Name          string `json:"name"`
-	ContextWindow int    `json:"context_window"`
-	MaxOutput     int    `json:"max_output"`
+	ID            string   `json:"id"`
+	Name          string   `json:"name"`
+	ContextWindow int      `json:"context_window"`
+	MaxOutput     int      `json:"max_output"`
+	ServerTools   []string `json:"server_tools,omitempty"`
 }

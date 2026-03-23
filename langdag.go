@@ -513,7 +513,7 @@ func buildProvider(ctx context.Context, cfg Config) (internalprovider.Provider, 
 	}
 
 	log.Printf("langdag: using provider: %s", providerName)
-	return internalprovider.WithRetry(prov, globalRetry), nil
+	return internalprovider.WithRetry(internalprovider.WithServerToolFilter(prov), globalRetry), nil
 }
 
 // createSingleProvider constructs a single provider by name.
@@ -647,7 +647,7 @@ func buildRouter(ctx context.Context, cfg Config, globalRetry internalprovider.R
 			continue
 		}
 		entryCfg := resolveRetryConfig(re.Retry)
-		wrapped := internalprovider.WithRetry(p, entryCfg)
+		wrapped := internalprovider.WithRetry(internalprovider.WithServerToolFilter(p), entryCfg)
 		entries = append(entries, internalprovider.RouteEntry{Provider: wrapped, Weight: re.Weight})
 		log.Printf("langdag: routing: %s (weight=%d)", re.Provider, re.Weight)
 	}
@@ -662,7 +662,7 @@ func buildRouter(ctx context.Context, cfg Config, globalRetry internalprovider.R
 		if p == nil {
 			continue
 		}
-		wrapped := internalprovider.WithRetry(p, globalRetry)
+		wrapped := internalprovider.WithRetry(internalprovider.WithServerToolFilter(p), globalRetry)
 		fallbackProviders = append(fallbackProviders, wrapped)
 		log.Printf("langdag: fallback: %s", name)
 	}
