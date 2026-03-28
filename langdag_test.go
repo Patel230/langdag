@@ -2339,3 +2339,135 @@ func TestWithMaxTokens_DefaultFallback(t *testing.T) {
 		t.Errorf("MaxTokens = %d, want 4096", prov.LastRequest.MaxTokens)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Phase 6: Reproduce original max_tokens crash chain
+// ---------------------------------------------------------------------------
+
+// callSequenceProvider cycles through a list of mock.Configs, one per Stream() call.
+// When calls exceed the list, the last config is reused.
+type callSequenceProvider struct {
+	mu      sync.Mutex
+	configs []mock.Config
+	callIdx int
+}
+
+func (p *callSequenceProvider) Name() string             { return "mock-sequence" }
+func (p *callSequenceProvider) Models() []types.ModelInfo { return nil }
+
+func (p *callSequenceProvider) Complete(ctx context.Context, req *types.CompletionRequest) (*types.CompletionResponse, error) {
+	p.mu.Lock()
+	idx := p.callIdx
+	if idx >= len(p.configs) {
+		idx = len(p.configs) - 1
+	}
+	p.callIdx++
+	cfg := p.configs[idx]
+	p.mu.Unlock()
+	return mock.New(cfg).Complete(ctx, req)
+}
+
+func (p *callSequenceProvider) Stream(ctx context.Context, req *types.CompletionRequest) (<-chan types.StreamEvent, error) {
+	p.mu.Lock()
+	idx := p.callIdx
+	if idx >= len(p.configs) {
+		idx = len(p.configs) - 1
+	}
+	p.callIdx++
+	cfg := p.configs[idx]
+	p.mu.Unlock()
+	return mock.New(cfg).Stream(ctx, req)
+}
+
+// drainStreamAllowError drains a PromptResult's Stream channel, collecting errors
+// instead of fataling. Returns nodeID, content, and any stream error.
+func drainStreamAllowError(result *langdag.PromptResult) (nodeID string, content string, streamErr error) {
+	for chunk := range result.Stream {
+		if chunk.Error != nil {
+			streamErr = chunk.Error
+		}
+		if chunk.Done {
+			nodeID = chunk.NodeID
+		} else {
+			content += chunk.Content
+		}
+	}
+	return
+}
+
+func TestMaxTokensCrashChain_NoCorruption(t *testing.T) {
+	// Reproduce the exact crash chain from the bug report:
+	// 1. First turn: normal response (establishes conversation)
+	// 2. Second turn (PromptFrom): max_tokens with empty content
+	//    Before fix: empty assistant node saved → next call sends {"type":"text","text":""}
+	//    After fix: no assistant node saved, error emitted
+	// 3. Third turn (PromptFrom from first assistant): should succeed because
+	//    conversation state was not corrupted.
+
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	store, err := sqlite.New(dbPath)
+	if err != nil {
+		t.Fatalf("sqlite.New: %v", err)
+	}
+	if err := store.Init(context.Background()); err != nil {
+		store.Close()
+		t.Fatalf("store.Init: %v", err)
+	}
+	defer store.Close()
+
+	prov := &callSequenceProvider{
+		configs: []mock.Config{
+			// Call 0: normal response (first turn)
+			{Mode: "fixed", FixedResponse: "Here is a normal first response."},
+			// Call 1: max_tokens with empty content (the crash trigger)
+			{Mode: "fixed", StopReason: "max_tokens"},
+			// Call 2: normal response (recovery)
+			{Mode: "fixed", FixedResponse: "Recovered successfully."},
+		},
+	}
+
+	client := langdag.NewWithDeps(store, prov)
+	defer client.Close()
+	ctx := context.Background()
+
+	// Turn 1: Normal response, establishes conversation.
+	result1, err := client.Prompt(ctx, "Hello")
+	if err != nil {
+		t.Fatalf("Prompt (turn 1): %v", err)
+	}
+	nodeID1, _ := drainStream(t, result1)
+	if nodeID1 == "" {
+		t.Fatal("expected assistant node from turn 1")
+	}
+
+	// Turn 2: PromptFrom the first assistant node — max_tokens empty.
+	// Phase 4b should prevent an empty assistant node from being saved.
+	result2, err := client.PromptFrom(ctx, nodeID1, "Generate a huge file")
+	if err != nil {
+		t.Fatalf("PromptFrom (turn 2): %v", err)
+	}
+	nodeID2, _, streamErr := drainStreamAllowError(result2)
+	if streamErr == nil {
+		t.Fatal("expected stream error for max_tokens with empty content")
+	}
+	if !strings.Contains(streamErr.Error(), "max_tokens") {
+		t.Errorf("expected max_tokens error, got: %v", streamErr)
+	}
+	if nodeID2 != "" {
+		t.Error("expected no assistant node saved for max_tokens empty, but got one")
+	}
+
+	// Turn 3: PromptFrom the FIRST assistant node again — should succeed
+	// because the failed turn 2 didn't corrupt conversation state.
+	result3, err := client.PromptFrom(ctx, nodeID1, "Try something simpler")
+	if err != nil {
+		t.Fatalf("PromptFrom (turn 3): %v", err)
+	}
+	nodeID3, content3 := drainStream(t, result3)
+	if nodeID3 == "" {
+		t.Fatal("expected assistant node from turn 3 (recovery)")
+	}
+	if !strings.Contains(content3, "Recovered") {
+		t.Errorf("expected recovery response, got: %q", content3)
+	}
+}
