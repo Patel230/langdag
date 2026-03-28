@@ -394,9 +394,29 @@ func (m *Manager) streamResponse(ctx context.Context, parentNode *types.Node, me
 // consecutive same-role messages into a single message with a content block
 // array, which prevents API errors from providers that enforce strict
 // role alternation (e.g. Anthropic).
+//
+// Output group deduplication: when consecutive assistant nodes share the same
+// OutputGroupID, only the last node's content is used (each continuation node
+// stores all accumulated content, so it is self-contained). Earlier nodes in
+// the group are skipped to avoid sending duplicated content to the LLM.
 func buildMessages(ancestors []*types.Node) []types.Message {
+	// Pre-scan: find the last node index for each output group so we can
+	// skip earlier nodes in the same group.
+	lastInGroup := map[string]int{}
+	for i, node := range ancestors {
+		if node.OutputGroupID != "" {
+			lastInGroup[node.OutputGroupID] = i
+		}
+	}
+
 	var messages []types.Message
-	for _, node := range ancestors {
+	for i, node := range ancestors {
+		// Skip earlier nodes in an output group — only the last carries
+		// the complete accumulated content.
+		if node.OutputGroupID != "" && i < lastInGroup[node.OutputGroupID] {
+			continue
+		}
+
 		var role string
 		switch node.NodeType {
 		case types.NodeTypeUser:
