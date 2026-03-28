@@ -1203,3 +1203,355 @@ func TestBuildMessages_StandaloneEmptyAssistantPassesThrough(t *testing.T) {
 		t.Errorf("expected empty content, got %q", content)
 	}
 }
+
+// --- Output group continuation tests ---
+
+// sequenceResponse describes a single response in a scripted sequence.
+type sequenceResponse struct {
+	text       string
+	stopReason string
+	outputToks int
+}
+
+// sequenceProvider returns scripted responses in order, implementing the
+// provider interface. Thread-safe: each Stream call atomically advances the index.
+type sequenceProvider struct {
+	responses []sequenceResponse
+	callIdx   int
+}
+
+func (p *sequenceProvider) Name() string { return "sequence-mock" }
+func (p *sequenceProvider) Models() []types.ModelInfo {
+	return []types.ModelInfo{{ID: "seq-mock", Name: "Sequence Mock", ContextWindow: 200000, MaxOutput: 8192}}
+}
+func (p *sequenceProvider) Complete(_ context.Context, _ *types.CompletionRequest) (*types.CompletionResponse, error) {
+	return nil, fmt.Errorf("Complete not implemented")
+}
+func (p *sequenceProvider) Stream(_ context.Context, _ *types.CompletionRequest) (<-chan types.StreamEvent, error) {
+	idx := p.callIdx
+	p.callIdx++
+	if idx >= len(p.responses) {
+		return nil, fmt.Errorf("no more scripted responses (call %d)", idx)
+	}
+	r := p.responses[idx]
+	ch := make(chan types.StreamEvent, 10)
+	go func() {
+		defer close(ch)
+		ch <- types.StreamEvent{Type: types.StreamEventStart}
+		if r.text != "" {
+			ch <- types.StreamEvent{Type: types.StreamEventDelta, Content: r.text}
+		}
+		outToks := r.outputToks
+		if outToks == 0 && r.text != "" {
+			outToks = len(r.text)
+		}
+		stopReason := r.stopReason
+		if stopReason == "" {
+			stopReason = "end_turn"
+		}
+		var blocks []types.ContentBlock
+		if r.text != "" {
+			blocks = append(blocks, types.ContentBlock{Type: "text", Text: r.text})
+		}
+		ch <- types.StreamEvent{
+			Type: types.StreamEventDone,
+			Response: &types.CompletionResponse{
+				ID: fmt.Sprintf("resp-%d", idx), Model: "seq-mock", Provider: "sequence-mock",
+				Content:    blocks,
+				StopReason: stopReason,
+				Usage:      types.Usage{InputTokens: 100, OutputTokens: outToks},
+			},
+		}
+	}()
+	return ch, nil
+}
+
+func newTestManagerWithSequence(t *testing.T, responses []sequenceResponse) (*Manager, *sqlite.SQLiteStorage, func()) {
+	t.Helper()
+	dbPath := t.TempDir() + "/test.db"
+	store, err := sqlite.New(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Init(context.Background()); err != nil {
+		store.Close()
+		t.Fatal(err)
+	}
+	prov := &sequenceProvider{responses: responses}
+	mgr := NewManager(store, prov)
+	return mgr, store, func() { store.Close() }
+}
+
+func TestOutputGroupContinuation_ThreeMaxTokensThenEndTurn(t *testing.T) {
+	// Mock: 3 max_tokens responses with text, then 1 end_turn.
+	// Expect: 4 nodes all sharing the same OutputGroupID,
+	// each with accumulated content, final NodeSaved emitted once.
+	mgr, store, cleanup := newTestManagerWithSequence(t, []sequenceResponse{
+		{text: "part1", stopReason: "max_tokens", outputToks: 100},
+		{text: " part2", stopReason: "max_tokens", outputToks: 100},
+		{text: " part3", stopReason: "max_tokens", outputToks: 100},
+		{text: " end", stopReason: "end_turn", outputToks: 50},
+	})
+	defer cleanup()
+
+	ctx := context.Background()
+	events, err := mgr.Prompt(ctx, "generate a lot", "", "", nil, nil, 1000, 0)
+	if err != nil {
+		t.Fatalf("Prompt: %v", err)
+	}
+	evs := drainEvents(t, events, 5*time.Second)
+
+	// Collect all text deltas and count NodeSaved events.
+	var allText string
+	var savedNodeIDs []string
+	for _, ev := range evs {
+		switch ev.Type {
+		case types.StreamEventDelta:
+			allText += ev.Content
+		case types.StreamEventNodeSaved:
+			savedNodeIDs = append(savedNodeIDs, ev.NodeID)
+		case types.StreamEventError:
+			t.Fatalf("unexpected error event: %v", ev.Error)
+		}
+	}
+
+	// Caller sees all text concatenated.
+	if allText != "part1 part2 part3 end" {
+		t.Errorf("accumulated text = %q, want %q", allText, "part1 part2 part3 end")
+	}
+
+	// Only one NodeSaved event (the final node).
+	if len(savedNodeIDs) != 1 {
+		t.Fatalf("expected 1 NodeSaved event, got %d: %v", len(savedNodeIDs), savedNodeIDs)
+	}
+
+	finalNodeID := savedNodeIDs[0]
+
+	// Walk ancestors of the final node — should be user + 4 assistant nodes.
+	ancestors, err := store.GetAncestors(ctx, finalNodeID)
+	if err != nil {
+		t.Fatalf("GetAncestors: %v", err)
+	}
+	// 1 user (root) + 4 assistant (continuation chain)
+	if len(ancestors) != 5 {
+		t.Fatalf("expected 5 ancestors (user + 4 assistant), got %d", len(ancestors))
+	}
+
+	// All 4 assistant nodes share the same OutputGroupID.
+	var groupID string
+	for _, node := range ancestors[1:] {
+		if node.NodeType != types.NodeTypeAssistant {
+			t.Errorf("expected assistant node, got %s", node.NodeType)
+			continue
+		}
+		if groupID == "" {
+			groupID = node.OutputGroupID
+		}
+		if node.OutputGroupID != groupID {
+			t.Errorf("node %s has OutputGroupID %q, want %q", node.ID, node.OutputGroupID, groupID)
+		}
+	}
+	if groupID == "" {
+		t.Error("expected non-empty OutputGroupID on continuation nodes")
+	}
+
+	// Each node has accumulated content (self-contained).
+	expectedContents := []string{
+		"part1",
+		"part1 part2",
+		"part1 part2 part3",
+		"part1 part2 part3 end",
+	}
+	for i, node := range ancestors[1:] {
+		if node.Content != expectedContents[i] {
+			t.Errorf("node %d content = %q, want %q", i, node.Content, expectedContents[i])
+		}
+	}
+
+	// The final node has stop_reason = "end_turn".
+	finalNode := ancestors[len(ancestors)-1]
+	if finalNode.StopReason != "end_turn" {
+		t.Errorf("final node stop_reason = %q, want end_turn", finalNode.StopReason)
+	}
+
+	// Intermediate nodes have stop_reason = "max_tokens".
+	for _, node := range ancestors[1 : len(ancestors)-1] {
+		if node.StopReason != "max_tokens" {
+			t.Errorf("intermediate node stop_reason = %q, want max_tokens", node.StopReason)
+		}
+	}
+}
+
+func TestOutputGroupContinuation_BudgetExceeded(t *testing.T) {
+	// Mock: 3 max_tokens responses each using 500 output tokens.
+	// Budget: 1000 tokens. After 2 calls (1000 tokens used), should stop.
+	mgr, store, cleanup := newTestManagerWithSequence(t, []sequenceResponse{
+		{text: "chunk1", stopReason: "max_tokens", outputToks: 500},
+		{text: " chunk2", stopReason: "max_tokens", outputToks: 500},
+		{text: " chunk3", stopReason: "end_turn", outputToks: 100}, // should NOT be reached
+	})
+	defer cleanup()
+
+	ctx := context.Background()
+	// maxTokens=500, maxOutputGroupTokens=1000 → budget=1000
+	events, err := mgr.Prompt(ctx, "write a lot", "", "", nil, nil, 500, 1000)
+	if err != nil {
+		t.Fatalf("Prompt: %v", err)
+	}
+	evs := drainEvents(t, events, 5*time.Second)
+
+	var allText string
+	var savedNodeIDs []string
+	for _, ev := range evs {
+		switch ev.Type {
+		case types.StreamEventDelta:
+			allText += ev.Content
+		case types.StreamEventNodeSaved:
+			savedNodeIDs = append(savedNodeIDs, ev.NodeID)
+		}
+	}
+
+	// Should see text from 2 calls only (budget stops before the 3rd).
+	if allText != "chunk1 chunk2" {
+		t.Errorf("text = %q, want %q", allText, "chunk1 chunk2")
+	}
+
+	if len(savedNodeIDs) != 1 {
+		t.Fatalf("expected 1 NodeSaved, got %d", len(savedNodeIDs))
+	}
+
+	// Should have user + 2 assistant nodes.
+	ancestors, err := store.GetAncestors(ctx, savedNodeIDs[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ancestors) != 3 {
+		t.Errorf("expected 3 ancestors (user + 2 assistant), got %d", len(ancestors))
+	}
+
+	// Last node has the budget-exceeded stop reason (max_tokens).
+	lastNode := ancestors[len(ancestors)-1]
+	if lastNode.StopReason != "max_tokens" {
+		t.Errorf("last node stop_reason = %q, want max_tokens (budget exceeded)", lastNode.StopReason)
+	}
+}
+
+func TestOutputGroupContinuation_NoContinuationForToolUse(t *testing.T) {
+	// When max_tokens response has tool_use blocks, do NOT continue.
+	mgr, cleanup := newTestManager(t, mock.Config{
+		Mode:       "tool_use",
+		StopReason: "max_tokens",
+		ToolCalls: []mock.ToolCallConfig{
+			{Name: "read_file", Input: json.RawMessage(`{"path":"foo.txt"}`)},
+		},
+		FixedResponse: "Let me read that file",
+	})
+	defer cleanup()
+
+	ctx := context.Background()
+	events, err := mgr.Prompt(ctx, "read the file", "", "", nil, nil, 1000, 0)
+	if err != nil {
+		t.Fatalf("Prompt: %v", err)
+	}
+	evs := drainEvents(t, events, 5*time.Second)
+
+	var nodeSaved int
+	for _, ev := range evs {
+		if ev.Type == types.StreamEventNodeSaved {
+			nodeSaved++
+		}
+	}
+	// Should save exactly one node (no continuation for tool_use).
+	if nodeSaved != 1 {
+		t.Errorf("expected 1 NodeSaved, got %d", nodeSaved)
+	}
+}
+
+func TestBuildMessages_OutputGroupDeduplication(t *testing.T) {
+	// Simulate a conversation with output group nodes. Only the last node
+	// in the group should appear in the messages.
+	ancestors := []*types.Node{
+		{NodeType: types.NodeTypeUser, Content: "write something long"},
+		{NodeType: types.NodeTypeAssistant, Content: "part1", OutputGroupID: "group-1"},
+		{NodeType: types.NodeTypeAssistant, Content: "part1 part2", OutputGroupID: "group-1"},
+		{NodeType: types.NodeTypeAssistant, Content: "part1 part2 part3", OutputGroupID: "group-1"},
+		{NodeType: types.NodeTypeUser, Content: "thanks"},
+	}
+
+	messages := buildMessages(ancestors)
+
+	// Expect: user("write something long"), assistant("part1 part2 part3"), user("thanks")
+	if len(messages) != 3 {
+		t.Fatalf("expected 3 messages, got %d", len(messages))
+	}
+
+	// First message: user
+	if messages[0].Role != "user" {
+		t.Errorf("msg[0] role = %q, want user", messages[0].Role)
+	}
+
+	// Second message: assistant with ONLY the final accumulated content
+	if messages[1].Role != "assistant" {
+		t.Errorf("msg[1] role = %q, want assistant", messages[1].Role)
+	}
+	var assistantText string
+	if err := json.Unmarshal(messages[1].Content, &assistantText); err != nil {
+		t.Fatalf("expected string content for assistant message: %v", err)
+	}
+	if assistantText != "part1 part2 part3" {
+		t.Errorf("assistant content = %q, want %q", assistantText, "part1 part2 part3")
+	}
+
+	// Third message: user
+	if messages[2].Role != "user" {
+		t.Errorf("msg[2] role = %q, want user", messages[2].Role)
+	}
+}
+
+func TestBuildMessages_OutputGroupDedup_NoGroupIDUnchanged(t *testing.T) {
+	// Nodes without OutputGroupID should behave as before — no deduplication.
+	ancestors := []*types.Node{
+		{NodeType: types.NodeTypeUser, Content: "hello"},
+		{NodeType: types.NodeTypeAssistant, Content: "response 1"},
+		{NodeType: types.NodeTypeUser, Content: "follow up"},
+		{NodeType: types.NodeTypeAssistant, Content: "response 2"},
+	}
+
+	messages := buildMessages(ancestors)
+	if len(messages) != 4 {
+		t.Fatalf("expected 4 messages, got %d", len(messages))
+	}
+}
+
+func TestOutputGroupContinuation_SingleCallNoGroup(t *testing.T) {
+	// When a single call completes with end_turn, no OutputGroupID should be set.
+	mgr, store, cleanup := newTestManagerWithSequence(t, []sequenceResponse{
+		{text: "complete response", stopReason: "end_turn", outputToks: 50},
+	})
+	defer cleanup()
+
+	ctx := context.Background()
+	events, err := mgr.Prompt(ctx, "say hello", "", "", nil, nil, 1000, 0)
+	if err != nil {
+		t.Fatalf("Prompt: %v", err)
+	}
+	evs := drainEvents(t, events, 5*time.Second)
+
+	var nodeID string
+	for _, ev := range evs {
+		if ev.Type == types.StreamEventNodeSaved {
+			nodeID = ev.NodeID
+		}
+	}
+	if nodeID == "" {
+		t.Fatal("no NodeSaved event")
+	}
+
+	node, err := store.GetNode(ctx, nodeID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if node.OutputGroupID != "" {
+		t.Errorf("single-call node should have empty OutputGroupID, got %q", node.OutputGroupID)
+	}
+}
