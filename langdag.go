@@ -360,7 +360,7 @@ type StreamChunk struct {
 // Returns a PromptResult with the streaming response.
 func (c *Client) Prompt(ctx context.Context, message string, opts ...PromptOption) (*PromptResult, error) {
 	o := applyOptions(opts)
-	events, err := c.convMgr.Prompt(ctx, message, o.model, o.systemPrompt, o.tools, o.think)
+	events, err := c.convMgr.Prompt(ctx, message, o.model, o.systemPrompt, o.tools, o.think, o.maxTokens)
 	if err != nil {
 		return nil, err
 	}
@@ -372,7 +372,7 @@ func (c *Client) Prompt(ctx context.Context, message string, opts ...PromptOptio
 // PromptFrom continues a conversation from an existing node.
 func (c *Client) PromptFrom(ctx context.Context, nodeID string, message string, opts ...PromptOption) (*PromptResult, error) {
 	o := applyOptions(opts)
-	events, err := c.convMgr.PromptFrom(ctx, nodeID, message, o.model, o.tools, o.think)
+	events, err := c.convMgr.PromptFrom(ctx, nodeID, message, o.model, o.tools, o.think, o.maxTokens)
 	if err != nil {
 		return nil, err
 	}
