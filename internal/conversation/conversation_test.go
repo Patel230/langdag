@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -1554,4 +1555,119 @@ func TestOutputGroupContinuation_SingleCallNoGroup(t *testing.T) {
 	if node.OutputGroupID != "" {
 		t.Errorf("single-call node should have empty OutputGroupID, got %q", node.OutputGroupID)
 	}
+}
+
+// =============================================================================
+// Phase 3: Conversation & Storage Error Branches
+// =============================================================================
+
+// --- 3a: Provider.Stream() returns error ---
+
+func TestPrompt_ProviderStreamError_ReturnsError(t *testing.T) {
+	// When the provider's Stream() method itself returns an error (not a stream
+	// event error), Prompt() should return that error immediately.
+	mgr, cleanup := newTestManager(t, mock.Config{
+		Mode:  "error",
+		Error: fmt.Errorf("provider unavailable: 503 Service Unavailable"),
+	})
+	defer cleanup()
+
+	ctx := context.Background()
+	events, err := mgr.Prompt(ctx, "hello", "", "", nil, nil, 0, 0)
+	if err == nil {
+		t.Fatal("expected error from Prompt when provider.Stream() fails, got nil")
+	}
+	if events != nil {
+		t.Error("expected nil events channel when Prompt returns error")
+	}
+	if !strings.Contains(err.Error(), "failed to stream response") {
+		t.Errorf("error should wrap with 'failed to stream response', got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "503 Service Unavailable") {
+		t.Errorf("error should contain original provider error, got: %v", err)
+	}
+}
+
+func TestPromptFrom_ProviderStreamError_ReturnsError(t *testing.T) {
+	// Same test but for PromptFrom — provider.Stream() error should propagate.
+	mgr, store, cleanup := newTestManagerWithStore(t, mock.Config{Mode: "fixed", FixedResponse: "ok"})
+	defer cleanup()
+	ctx := context.Background()
+
+	// Create an initial conversation node so we have a parent to continue from.
+	root := &types.Node{ID: "u1", RootID: "u1", Sequence: 0, NodeType: types.NodeTypeUser, Content: "hi", CreatedAt: time.Now()}
+	assistant := &types.Node{ID: "a1", ParentID: "u1", RootID: "u1", Sequence: 1, NodeType: types.NodeTypeAssistant, Content: "hello", CreatedAt: time.Now()}
+	for _, n := range []*types.Node{root, assistant} {
+		if err := store.CreateNode(ctx, n); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Now replace the provider with one that errors.
+	errProv := mock.New(mock.Config{
+		Mode:  "error",
+		Error: fmt.Errorf("auth failed: 401 Unauthorized"),
+	})
+	mgr = NewManager(store, errProv)
+
+	events, err := mgr.PromptFrom(ctx, "a1", "continue", "", nil, nil, 0, 0)
+	if err == nil {
+		t.Fatal("expected error from PromptFrom when provider.Stream() fails")
+	}
+	if events != nil {
+		t.Error("expected nil events channel")
+	}
+	if !strings.Contains(err.Error(), "failed to stream response") {
+		t.Errorf("error should wrap with 'failed to stream response', got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "401 Unauthorized") {
+		t.Errorf("error should contain original provider error, got: %v", err)
+	}
+}
+
+func TestStreamResponse_StreamEventError_EmittedAndChannelClosed(t *testing.T) {
+	// When the provider's stream emits a StreamEventError (mid-stream failure),
+	// verify the error is forwarded on the events channel and the channel closes.
+	mgr, cleanup := newTestManager(t, mock.Config{
+		Mode:             "stream_error",
+		FixedResponse:    "word1 word2 word3 word4 word5",
+		ErrorAfterChunks: 2,
+		Error:            fmt.Errorf("connection reset by peer"),
+	})
+	defer cleanup()
+
+	ctx := context.Background()
+	events, err := mgr.Prompt(ctx, "hello", "", "", nil, nil, 0, 0)
+	if err != nil {
+		t.Fatalf("Prompt should not return error for stream_error mode: %v", err)
+	}
+
+	evs := drainEvents(t, events, 5*time.Second)
+
+	// Should have received some delta events before the error.
+	var deltaCount int
+	var gotError bool
+	var errMsg string
+	for _, ev := range evs {
+		switch ev.Type {
+		case types.StreamEventDelta:
+			deltaCount++
+		case types.StreamEventError:
+			gotError = true
+			if ev.Error != nil {
+				errMsg = ev.Error.Error()
+			}
+		}
+	}
+
+	if deltaCount == 0 {
+		t.Error("expected at least 1 delta event before the error")
+	}
+	if !gotError {
+		t.Fatal("expected a StreamEventError from the stream")
+	}
+	if !strings.Contains(errMsg, "connection reset by peer") {
+		t.Errorf("error message should contain original error, got: %q", errMsg)
+	}
+	// Channel should be closed (drainEvents completed without timeout).
 }
