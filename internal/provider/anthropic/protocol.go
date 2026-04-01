@@ -55,6 +55,20 @@ func buildParams(req *types.CompletionRequest) (anthropic.MessageNewParams, erro
 		params.StopSequences = req.StopSeqs
 	}
 
+	// Set cache control breakpoint on the last content block of the
+	// second-to-last message. This caches the entire conversation prefix
+	// (system + tools + messages up to that point). On the next turn, only the
+	// new user message is uncached. Uses 1 of 4 allowed Anthropic breakpoints
+	// (the other 2 are system prompt and last tool).
+	if n := len(messages); n >= 2 {
+		penultimate := &messages[n-2]
+		if m := len(penultimate.Content); m > 0 {
+			if cc := penultimate.Content[m-1].GetCacheControl(); cc != nil {
+				*cc = anthropic.NewCacheControlEphemeralParam()
+			}
+		}
+	}
+
 	if len(req.Tools) > 0 {
 		tools, err := convertTools(req.Tools)
 		if err != nil {

@@ -1029,3 +1029,198 @@ func TestConvertMessages_NonEmptyStringAssistantKept(t *testing.T) {
 		t.Errorf("expected assistant role, got %s", result[1].Role)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// buildParams — conversation-level prompt caching (cache breakpoint on messages)
+// ---------------------------------------------------------------------------
+
+func TestBuildParams_MultiTurnCachesSecondToLastMessage(t *testing.T) {
+	// In a multi-turn conversation, the second-to-last message's last content
+	// block should have CacheControl set to cache the conversation prefix.
+	req := &types.CompletionRequest{
+		Model: "claude-sonnet-4-20250514",
+		Messages: []types.Message{
+			{Role: "user", Content: json.RawMessage(`"Hello"`)},
+			{Role: "assistant", Content: json.RawMessage(`"Hi there!"`)},
+			{Role: "user", Content: json.RawMessage(`"What is the weather?"`)},
+		},
+		MaxTokens: 1024,
+	}
+	params, err := buildParams(req)
+	if err != nil {
+		t.Fatalf("buildParams: %v", err)
+	}
+	if len(params.Messages) != 3 {
+		t.Fatalf("expected 3 messages, got %d", len(params.Messages))
+	}
+
+	// Second-to-last message (assistant "Hi there!") should have cache control
+	penultimate := params.Messages[1]
+	if len(penultimate.Content) != 1 {
+		t.Fatalf("expected 1 content block in penultimate message, got %d", len(penultimate.Content))
+	}
+	cc := penultimate.Content[0].GetCacheControl()
+	if cc == nil {
+		t.Fatal("expected CacheControl pointer on penultimate message content block")
+	}
+	if cc.Type != "ephemeral" {
+		t.Errorf("penultimate message CacheControl.Type = %q, want %q", cc.Type, "ephemeral")
+	}
+
+	// Last message (user "What is the weather?") should NOT have cache control
+	last := params.Messages[2]
+	lastCC := last.Content[0].GetCacheControl()
+	if lastCC != nil && lastCC.Type == "ephemeral" {
+		t.Error("last message should not have CacheControl set")
+	}
+
+	// First message should NOT have cache control
+	first := params.Messages[0]
+	firstCC := first.Content[0].GetCacheControl()
+	if firstCC != nil && firstCC.Type == "ephemeral" {
+		t.Error("first message should not have CacheControl set")
+	}
+}
+
+func TestBuildParams_SingleMessageNoCrash(t *testing.T) {
+	// A single-message conversation should not crash or set any message cache control.
+	req := &types.CompletionRequest{
+		Model:     "claude-sonnet-4-20250514",
+		Messages:  []types.Message{{Role: "user", Content: json.RawMessage(`"Hello"`)}},
+		MaxTokens: 1024,
+	}
+	params, err := buildParams(req)
+	if err != nil {
+		t.Fatalf("buildParams: %v", err)
+	}
+	if len(params.Messages) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(params.Messages))
+	}
+	// No cache control should be set (only 1 message, no second-to-last)
+	cc := params.Messages[0].Content[0].GetCacheControl()
+	if cc != nil && cc.Type == "ephemeral" {
+		t.Error("single message should not have CacheControl set")
+	}
+}
+
+func TestBuildParams_CacheBreakpointMovesWithConversation(t *testing.T) {
+	// As conversation grows, the cache breakpoint should always be on the
+	// second-to-last message, not stuck on a previous position.
+	twoTurnReq := &types.CompletionRequest{
+		Model: "claude-sonnet-4-20250514",
+		Messages: []types.Message{
+			{Role: "user", Content: json.RawMessage(`"Hello"`)},
+			{Role: "assistant", Content: json.RawMessage(`"Hi!"`)},
+		},
+		MaxTokens: 1024,
+	}
+	params2, err := buildParams(twoTurnReq)
+	if err != nil {
+		t.Fatalf("buildParams (2 messages): %v", err)
+	}
+	// With 2 messages, first (user) is penultimate → should have cache control
+	cc2 := params2.Messages[0].Content[0].GetCacheControl()
+	if cc2 == nil || cc2.Type != "ephemeral" {
+		t.Error("2-message: first message should have CacheControl")
+	}
+
+	fourTurnReq := &types.CompletionRequest{
+		Model: "claude-sonnet-4-20250514",
+		Messages: []types.Message{
+			{Role: "user", Content: json.RawMessage(`"Hello"`)},
+			{Role: "assistant", Content: json.RawMessage(`"Hi!"`)},
+			{Role: "user", Content: json.RawMessage(`"Weather?"`)},
+			{Role: "assistant", Content: json.RawMessage(`"Sunny!"`)},
+			{Role: "user", Content: json.RawMessage(`"Thanks"`)},
+		},
+		MaxTokens: 1024,
+	}
+	params4, err := buildParams(fourTurnReq)
+	if err != nil {
+		t.Fatalf("buildParams (5 messages): %v", err)
+	}
+	// Penultimate is messages[3] (assistant "Sunny!")
+	cc4 := params4.Messages[3].Content[0].GetCacheControl()
+	if cc4 == nil || cc4.Type != "ephemeral" {
+		t.Error("5-message: penultimate message should have CacheControl")
+	}
+	// Earlier messages should NOT have cache control
+	for i := 0; i < 3; i++ {
+		earlyCC := params4.Messages[i].Content[0].GetCacheControl()
+		if earlyCC != nil && earlyCC.Type == "ephemeral" {
+			t.Errorf("5-message: message[%d] should not have CacheControl", i)
+		}
+	}
+}
+
+func TestBuildParams_MultiBlockMessageCachesLastBlock(t *testing.T) {
+	// When the second-to-last message has multiple content blocks, only the
+	// last block should get the cache breakpoint.
+	blocks := []types.ContentBlock{
+		{Type: "text", Text: "Let me check."},
+		{
+			Type:  "tool_use",
+			ID:    "toolu_cache_test",
+			Name:  "get_weather",
+			Input: json.RawMessage(`{"location":"NYC"}`),
+		},
+	}
+	blocksJSON, _ := json.Marshal(blocks)
+
+	req := &types.CompletionRequest{
+		Model: "claude-sonnet-4-20250514",
+		Messages: []types.Message{
+			{Role: "assistant", Content: blocksJSON},
+			{Role: "user", Content: json.RawMessage(`"Thanks"`)},
+		},
+		MaxTokens: 1024,
+	}
+	params, err := buildParams(req)
+	if err != nil {
+		t.Fatalf("buildParams: %v", err)
+	}
+	penultimate := params.Messages[0]
+	if len(penultimate.Content) != 2 {
+		t.Fatalf("expected 2 content blocks in penultimate, got %d", len(penultimate.Content))
+	}
+	// First block (text) should NOT have cache control
+	firstCC := penultimate.Content[0].GetCacheControl()
+	if firstCC != nil && firstCC.Type == "ephemeral" {
+		t.Error("first content block should not have CacheControl")
+	}
+	// Last block (tool_use) SHOULD have cache control
+	lastCC := penultimate.Content[1].GetCacheControl()
+	if lastCC == nil || lastCC.Type != "ephemeral" {
+		t.Error("last content block of penultimate message should have CacheControl")
+	}
+}
+
+func TestBuildParams_ToolResultMessageCachesCorrectly(t *testing.T) {
+	// Edge case: penultimate message contains tool_result blocks (user message).
+	// tool_result blocks should also get cache control via GetCacheControl().
+	toolResultBlocks := []types.ContentBlock{
+		{Type: "tool_result", ToolUseID: "toolu_abc", Content: "72°F"},
+	}
+	toolResultJSON, _ := json.Marshal(toolResultBlocks)
+
+	req := &types.CompletionRequest{
+		Model: "claude-sonnet-4-20250514",
+		Messages: []types.Message{
+			{Role: "user", Content: json.RawMessage(`"Hello"`)},
+			{Role: "assistant", Content: json.RawMessage(`"Checking..."`)},
+			{Role: "user", Content: toolResultJSON},
+			{Role: "assistant", Content: json.RawMessage(`"It is 72°F"`)},
+			{Role: "user", Content: json.RawMessage(`"Thanks!"`)},
+		},
+		MaxTokens: 1024,
+	}
+	params, err := buildParams(req)
+	if err != nil {
+		t.Fatalf("buildParams: %v", err)
+	}
+	// Penultimate = messages[3] (assistant "It is 72°F")
+	penultimateCC := params.Messages[3].Content[0].GetCacheControl()
+	if penultimateCC == nil || penultimateCC.Type != "ephemeral" {
+		t.Error("penultimate message should have CacheControl")
+	}
+}
