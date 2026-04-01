@@ -2,6 +2,8 @@ package openai
 
 import (
 	"encoding/json"
+	"errors"
+	"io"
 	"strings"
 	"testing"
 
@@ -466,5 +468,400 @@ func TestParseResponsesSSEStream_FunctionCall(t *testing.T) {
 	}
 	if doneResp.StopReason != "tool_calls" {
 		t.Errorf("stop reason = %q, want %q", doneResp.StopReason, "tool_calls")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// convertResponsesMessages — error branch coverage
+// ---------------------------------------------------------------------------
+
+func TestConvertResponsesMessages_MalformedJSON(t *testing.T) {
+	// Falls back to raw string content — no panic.
+	messages := []types.Message{
+		{Role: "user", Content: json.RawMessage(`{invalid}`)},
+	}
+	_, input := convertResponsesMessages(messages, "")
+	if len(input) != 1 {
+		t.Fatalf("expected 1 input, got %d", len(input))
+	}
+	msg, ok := input[0].(responsesInputMessage)
+	if !ok {
+		t.Fatalf("expected responsesInputMessage, got %T", input[0])
+	}
+	if msg.Content != `{invalid}` {
+		t.Errorf("content = %v, want raw fallback", msg.Content)
+	}
+}
+
+func TestConvertResponsesMessages_EmptyContentArray(t *testing.T) {
+	// Empty block array → message with empty text.
+	messages := []types.Message{
+		{Role: "user", Content: json.RawMessage(`[]`)},
+	}
+	_, input := convertResponsesMessages(messages, "")
+	if len(input) != 1 {
+		t.Fatalf("expected 1 input, got %d", len(input))
+	}
+	msg, ok := input[0].(responsesInputMessage)
+	if !ok {
+		t.Fatalf("expected responsesInputMessage, got %T", input[0])
+	}
+	if msg.Content != "" {
+		t.Errorf("content = %v, want empty", msg.Content)
+	}
+}
+
+func TestConvertResponsesMessages_UnknownBlockTypes(t *testing.T) {
+	// Unknown block types are silently skipped; only text is joined.
+	blocks := []types.ContentBlock{
+		{Type: "audio"},
+		{Type: "text", Text: "Hello"},
+	}
+	content, _ := json.Marshal(blocks)
+	messages := []types.Message{
+		{Role: "user", Content: content},
+	}
+	_, input := convertResponsesMessages(messages, "")
+	if len(input) != 1 {
+		t.Fatalf("expected 1 input, got %d", len(input))
+	}
+	msg, ok := input[0].(responsesInputMessage)
+	if !ok {
+		t.Fatalf("expected responsesInputMessage, got %T", input[0])
+	}
+	if msg.Content != "Hello" {
+		t.Errorf("content = %v, want %q", msg.Content, "Hello")
+	}
+}
+
+func TestConvertResponsesMessages_ToolResultWithContentJSON(t *testing.T) {
+	// When ContentJSON is set, it takes priority over Content.
+	blocks := []types.ContentBlock{
+		{Type: "tool_result", ToolUseID: "call_1", Content: "plain text", ContentJSON: json.RawMessage(`{"key":"value"}`)},
+	}
+	content, _ := json.Marshal(blocks)
+	messages := []types.Message{
+		{Role: "user", Content: content},
+	}
+	_, input := convertResponsesMessages(messages, "")
+	if len(input) != 1 {
+		t.Fatalf("expected 1 input, got %d", len(input))
+	}
+	fco, ok := input[0].(responsesFunctionCallOutput)
+	if !ok {
+		t.Fatalf("expected responsesFunctionCallOutput, got %T", input[0])
+	}
+	if fco.Output != `{"key":"value"}` {
+		t.Errorf("output = %q, want %q", fco.Output, `{"key":"value"}`)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// convertResponsesResult — error branch coverage
+// ---------------------------------------------------------------------------
+
+func TestConvertResponsesResult_EmptyOutput(t *testing.T) {
+	// Empty output array → no content, stop reason "stop".
+	resp := &responsesResponse{
+		ID:     "resp_empty",
+		Model:  "grok-3",
+		Output: []responsesOutput{},
+		Usage:  &responsesUsage{InputTokens: 5},
+	}
+	result := convertResponsesResult(resp)
+	if len(result.Content) != 0 {
+		t.Errorf("expected 0 content blocks, got %d", len(result.Content))
+	}
+	if result.StopReason != "stop" {
+		t.Errorf("stop reason = %q, want %q", result.StopReason, "stop")
+	}
+}
+
+func TestConvertResponsesResult_UnknownOutputType(t *testing.T) {
+	// Unknown output types should be silently skipped.
+	resp := &responsesResponse{
+		ID:    "resp_unk",
+		Model: "grok-3",
+		Output: []responsesOutput{
+			{Type: "web_search_result", Content: []responsesContentBlock{{Type: "output_text", Text: "search results"}}},
+			{Type: "message", Role: "assistant", Content: []responsesContentBlock{{Type: "output_text", Text: "Here"}}},
+		},
+	}
+	result := convertResponsesResult(resp)
+	// Only "message" type should be processed
+	if len(result.Content) != 1 {
+		t.Fatalf("expected 1 content block, got %d", len(result.Content))
+	}
+	if result.Content[0].Text != "Here" {
+		t.Errorf("text = %q, want %q", result.Content[0].Text, "Here")
+	}
+}
+
+func TestConvertResponsesResult_NilUsage(t *testing.T) {
+	resp := &responsesResponse{
+		ID:     "resp_nousage",
+		Model:  "grok-3",
+		Output: []responsesOutput{{Type: "message", Content: []responsesContentBlock{{Type: "output_text", Text: "Hi"}}}},
+	}
+	result := convertResponsesResult(resp)
+	if result.Usage.InputTokens != 0 {
+		t.Errorf("expected 0 InputTokens with nil usage, got %d", result.Usage.InputTokens)
+	}
+}
+
+func TestConvertResponsesResult_EmptyTextSkipped(t *testing.T) {
+	// output_text blocks with empty text should be skipped.
+	resp := &responsesResponse{
+		ID:    "resp_empty_text",
+		Model: "grok-3",
+		Output: []responsesOutput{
+			{Type: "message", Content: []responsesContentBlock{
+				{Type: "output_text", Text: ""},
+				{Type: "output_text", Text: "Hi"},
+			}},
+		},
+	}
+	result := convertResponsesResult(resp)
+	if len(result.Content) != 1 {
+		t.Fatalf("expected 1 content block (empty skipped), got %d", len(result.Content))
+	}
+	if result.Content[0].Text != "Hi" {
+		t.Errorf("text = %q, want %q", result.Content[0].Text, "Hi")
+	}
+}
+
+func TestConvertResponsesResult_FunctionCallNoArguments(t *testing.T) {
+	// Function call with empty arguments string.
+	resp := &responsesResponse{
+		ID:    "resp_noargs",
+		Model: "grok-3",
+		Output: []responsesOutput{
+			{Type: "function_call", CallID: "call_1", Name: "no_args"},
+		},
+	}
+	result := convertResponsesResult(resp)
+	if len(result.Content) != 1 {
+		t.Fatalf("expected 1 content block, got %d", len(result.Content))
+	}
+	if result.Content[0].Name != "no_args" {
+		t.Errorf("name = %q, want %q", result.Content[0].Name, "no_args")
+	}
+	if result.StopReason != "tool_calls" {
+		t.Errorf("stop reason = %q, want %q", result.StopReason, "tool_calls")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// parseResponsesSSEStream — error branch coverage
+// ---------------------------------------------------------------------------
+
+func TestParseResponsesSSEStream_MalformedJSON(t *testing.T) {
+	// Malformed JSON data lines should be silently skipped.
+	sse := strings.Join([]string{
+		`data: {"type":"response.output_text.delta","delta":"Hello"}`,
+		`data: {invalid json}`,
+		`data: {"type":"response.output_text.delta","delta":" world"}`,
+		`data: {"type":"response.completed","response":{"id":"r1","model":"grok-3","output":[{"type":"message","content":[{"type":"output_text","text":"Hello world"}]}],"usage":{"input_tokens":5,"output_tokens":2},"status":"completed"}}`,
+	}, "\n")
+
+	events := make(chan types.StreamEvent, 100)
+	go func() {
+		defer close(events)
+		parseResponsesSSEStream(strings.NewReader(sse), events)
+	}()
+
+	var text string
+	for ev := range events {
+		if ev.Type == types.StreamEventDelta {
+			text += ev.Content
+		}
+	}
+	if text != "Hello world" {
+		t.Errorf("text = %q, want %q", text, "Hello world")
+	}
+}
+
+func TestParseResponsesSSEStream_EmptyStream(t *testing.T) {
+	// Empty stream → fallback: start + done with empty response.
+	events := make(chan types.StreamEvent, 20)
+	go func() {
+		defer close(events)
+		parseResponsesSSEStream(strings.NewReader(""), events)
+	}()
+
+	var gotStart, gotDone bool
+	for ev := range events {
+		switch ev.Type {
+		case types.StreamEventStart:
+			gotStart = true
+		case types.StreamEventDone:
+			gotDone = true
+		}
+	}
+	if !gotStart {
+		t.Error("expected start event")
+	}
+	if !gotDone {
+		t.Error("expected done event")
+	}
+}
+
+func TestParseResponsesSSEStream_NoCompletedEvent(t *testing.T) {
+	// Stream without response.completed → uses fallback from accumulated calls.
+	sse := strings.Join([]string{
+		`data: {"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","call_id":"call_1","name":"search"}}`,
+		`data: {"type":"response.function_call_arguments.delta","output_index":0,"delta":"{\"q\":\"test\"}"}`,
+		`data: {"type":"response.function_call_arguments.done","output_index":0}`,
+	}, "\n")
+
+	events := make(chan types.StreamEvent, 100)
+	go func() {
+		defer close(events)
+		parseResponsesSSEStream(strings.NewReader(sse), events)
+	}()
+
+	var doneResp *types.CompletionResponse
+	for ev := range events {
+		if ev.Type == types.StreamEventDone {
+			doneResp = ev.Response
+		}
+	}
+	if doneResp == nil {
+		t.Fatal("expected done response from fallback")
+	}
+	if doneResp.StopReason != "tool_calls" {
+		t.Errorf("stop reason = %q, want %q", doneResp.StopReason, "tool_calls")
+	}
+	if len(doneResp.Content) != 1 {
+		t.Fatalf("expected 1 content block, got %d", len(doneResp.Content))
+	}
+	if doneResp.Content[0].Name != "search" {
+		t.Errorf("name = %q, want %q", doneResp.Content[0].Name, "search")
+	}
+}
+
+func TestParseResponsesSSEStream_ArgsDeltaWithoutPriorItem(t *testing.T) {
+	// arguments.delta event for an index not yet registered by output_item.added.
+	// Should create a new entry, not panic.
+	sse := strings.Join([]string{
+		`data: {"type":"response.function_call_arguments.delta","output_index":5,"delta":"{\"x\":1}"}`,
+		`data: {"type":"response.function_call_arguments.done","output_index":5}`,
+	}, "\n")
+
+	events := make(chan types.StreamEvent, 100)
+	go func() {
+		defer close(events)
+		parseResponsesSSEStream(strings.NewReader(sse), events)
+	}()
+
+	var contentDone *types.ContentBlock
+	for ev := range events {
+		if ev.Type == types.StreamEventContentDone {
+			contentDone = ev.ContentBlock
+		}
+	}
+	if contentDone == nil {
+		t.Fatal("expected content_done event")
+	}
+	if string(contentDone.Input) != `{"x":1}` {
+		t.Errorf("input = %q, want %q", string(contentDone.Input), `{"x":1}`)
+	}
+}
+
+func TestParseResponsesSSEStream_ReadError(t *testing.T) {
+	pr, pw := io.Pipe()
+	go func() {
+		pw.Write([]byte("data: {\"type\":\"response.output_text.delta\",\"delta\":\"Hi\"}\n\n"))
+		pw.CloseWithError(errors.New("connection reset"))
+	}()
+
+	events := make(chan types.StreamEvent, 100)
+	go func() {
+		defer close(events)
+		parseResponsesSSEStream(pr, events)
+	}()
+
+	var gotError bool
+	for ev := range events {
+		if ev.Type == types.StreamEventError {
+			gotError = true
+			if !strings.Contains(ev.Error.Error(), "connection reset") {
+				t.Errorf("error = %q, should contain 'connection reset'", ev.Error.Error())
+			}
+		}
+	}
+	if !gotError {
+		t.Fatal("expected error event from connection reset")
+	}
+}
+
+func TestParseResponsesSSEStream_DONESentinel(t *testing.T) {
+	// [DONE] sentinel should stop processing and use fallback.
+	sse := strings.Join([]string{
+		`data: {"type":"response.output_text.delta","delta":"Hi"}`,
+		`data: [DONE]`,
+		`data: {"type":"response.output_text.delta","delta":" ignored"}`,
+	}, "\n")
+
+	events := make(chan types.StreamEvent, 100)
+	go func() {
+		defer close(events)
+		parseResponsesSSEStream(strings.NewReader(sse), events)
+	}()
+
+	var text string
+	for ev := range events {
+		if ev.Type == types.StreamEventDelta {
+			text += ev.Content
+		}
+	}
+	// Only "Hi" should be received — " ignored" comes after [DONE]
+	if text != "Hi" {
+		t.Errorf("text = %q, want %q", text, "Hi")
+	}
+}
+
+func TestParseResponsesSSEStream_CompletedNilResponse(t *testing.T) {
+	// response.completed with nil response field → falls to fallback.
+	sse := `data: {"type":"response.completed"}`
+
+	events := make(chan types.StreamEvent, 100)
+	go func() {
+		defer close(events)
+		parseResponsesSSEStream(strings.NewReader(sse), events)
+	}()
+
+	var gotDone bool
+	for ev := range events {
+		if ev.Type == types.StreamEventDone {
+			gotDone = true
+		}
+	}
+	if !gotDone {
+		t.Error("expected done event from fallback")
+	}
+}
+
+func TestParseResponsesSSEStream_NonDataLinesIgnored(t *testing.T) {
+	sse := `: comment
+event: something
+
+data: {"type":"response.output_text.delta","delta":"Hi"}
+data: {"type":"response.completed","response":{"id":"r","model":"m","output":[{"type":"message","content":[{"type":"output_text","text":"Hi"}]}],"status":"completed"}}
+`
+	events := make(chan types.StreamEvent, 100)
+	go func() {
+		defer close(events)
+		parseResponsesSSEStream(strings.NewReader(sse), events)
+	}()
+
+	var text string
+	for ev := range events {
+		if ev.Type == types.StreamEventDelta {
+			text += ev.Content
+		}
+	}
+	if text != "Hi" {
+		t.Errorf("text = %q, want %q", text, "Hi")
 	}
 }
