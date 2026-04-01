@@ -201,6 +201,106 @@ func TestFilterProvider_StreamFilters(t *testing.T) {
 	}
 }
 
+func TestFilterProvider_EmptyModelID(t *testing.T) {
+	inner := &stubProvider{
+		models: []types.ModelInfo{
+			{ID: "model-a", ServerTools: []string{"web_search"}},
+		},
+	}
+	fp := WithServerToolFilter(inner)
+
+	// Empty model ID — not in catalog, all server tools stripped.
+	req := &types.CompletionRequest{
+		Model: "",
+		Tools: []types.ToolDefinition{
+			serverTool("web_search"),
+			clientTool("my_func"),
+		},
+	}
+	fp.Complete(context.Background(), req)
+
+	if len(inner.lastReq.Tools) != 1 {
+		t.Errorf("expected 1 tool (my_func only), got %d", len(inner.lastReq.Tools))
+	}
+	if inner.lastReq.Tools[0].Name != "my_func" {
+		t.Errorf("expected my_func, got %s", inner.lastReq.Tools[0].Name)
+	}
+}
+
+func TestFilterProvider_AllServerToolsUnknownModel(t *testing.T) {
+	inner := &stubProvider{
+		models: []types.ModelInfo{
+			{ID: "model-a", ServerTools: []string{"web_search"}},
+		},
+	}
+	fp := WithServerToolFilter(inner)
+
+	// Unknown model + only server tools → all stripped, empty tools list.
+	req := &types.CompletionRequest{
+		Model: "unknown-model",
+		Tools: []types.ToolDefinition{
+			serverTool("web_search"),
+			serverTool("code_interpreter"),
+		},
+	}
+	fp.Complete(context.Background(), req)
+
+	if len(inner.lastReq.Tools) != 0 {
+		t.Errorf("expected 0 tools, got %d", len(inner.lastReq.Tools))
+	}
+}
+
+func TestFilterProvider_MultipleModelsUnknownStripsAll(t *testing.T) {
+	inner := &stubProvider{
+		models: []types.ModelInfo{
+			{ID: "model-a", ServerTools: []string{"web_search", "code_interpreter"}},
+			{ID: "model-b", ServerTools: []string{"web_search"}},
+		},
+	}
+	fp := WithServerToolFilter(inner)
+
+	// Unknown model — doesn't inherit any model's capabilities.
+	req := &types.CompletionRequest{
+		Model: "model-c",
+		Tools: []types.ToolDefinition{
+			serverTool("web_search"),
+			serverTool("code_interpreter"),
+			clientTool("my_func"),
+		},
+	}
+	fp.Complete(context.Background(), req)
+
+	if len(inner.lastReq.Tools) != 1 {
+		t.Errorf("expected 1 tool (my_func only), got %d", len(inner.lastReq.Tools))
+	}
+}
+
+func TestFilterProvider_StreamUnknownModel(t *testing.T) {
+	inner := &stubProvider{
+		models: []types.ModelInfo{
+			{ID: "model-a", ServerTools: []string{"web_search"}},
+		},
+	}
+	fp := WithServerToolFilter(inner)
+
+	// Stream path with unknown model — server tools stripped.
+	req := &types.CompletionRequest{
+		Model: "unknown-model",
+		Tools: []types.ToolDefinition{
+			serverTool("web_search"),
+			clientTool("my_func"),
+		},
+	}
+	fp.Stream(context.Background(), req)
+
+	if len(inner.lastReq.Tools) != 1 {
+		t.Errorf("Stream: expected 1 tool, got %d", len(inner.lastReq.Tools))
+	}
+	if inner.lastReq.Tools[0].Name != "my_func" {
+		t.Errorf("Stream: expected my_func, got %s", inner.lastReq.Tools[0].Name)
+	}
+}
+
 func TestFilterProvider_PassthroughMethods(t *testing.T) {
 	inner := &stubProvider{
 		models: []types.ModelInfo{
