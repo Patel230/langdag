@@ -2,6 +2,7 @@ package anthropic
 
 import (
 	"encoding/json"
+	"errors"
 	"testing"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -29,6 +30,25 @@ func (d *mockDecoder) Event() ssestream.Event {
 
 func (d *mockDecoder) Err() error   { return nil }
 func (d *mockDecoder) Close() error { return nil }
+
+// errDecoder is a mockDecoder that returns an error after exhausting events.
+type errDecoder struct {
+	events []ssestream.Event
+	idx    int
+	err    error
+}
+
+func (d *errDecoder) Next() bool {
+	if d.idx >= len(d.events) {
+		return false
+	}
+	d.idx++
+	return true
+}
+
+func (d *errDecoder) Event() ssestream.Event { return d.events[d.idx-1] }
+func (d *errDecoder) Err() error             { return d.err }
+func (d *errDecoder) Close() error           { return nil }
 
 // makeEvent creates an SSE event with the given type and JSON data.
 func makeEvent(eventType string, data interface{}) ssestream.Event {
@@ -1222,5 +1242,397 @@ func TestBuildParams_ToolResultMessageCachesCorrectly(t *testing.T) {
 	penultimateCC := params.Messages[3].Content[0].GetCacheControl()
 	if penultimateCC == nil || penultimateCC.Type != "ephemeral" {
 		t.Error("penultimate message should have CacheControl")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// convertMessages — error branch coverage
+// ---------------------------------------------------------------------------
+
+func TestConvertMessages_MalformedJSON(t *testing.T) {
+	// Content that is neither a valid JSON string nor a valid []ContentBlock
+	// must return a clear error, never panic.
+	messages := []types.Message{
+		{Role: "user", Content: json.RawMessage(`{invalid json}`)},
+	}
+	_, err := convertMessages(messages)
+	if err == nil {
+		t.Fatal("expected error for malformed JSON content, got nil")
+	}
+}
+
+func TestConvertMessages_EmptyContentArray(t *testing.T) {
+	// An empty JSON array is valid but has no usable blocks.
+	// The message should be skipped (not cause an error or panic).
+	messages := []types.Message{
+		{Role: "user", Content: json.RawMessage(`[]`)},
+	}
+	result, err := convertMessages(messages)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result) != 0 {
+		t.Errorf("expected 0 messages (empty content array skipped), got %d", len(result))
+	}
+}
+
+func TestConvertMessages_UnknownBlockTypes(t *testing.T) {
+	// Blocks with unrecognized types should be silently skipped, not panic.
+	blocks := []types.ContentBlock{
+		{Type: "audio", Text: "some audio data"},
+		{Type: "thinking", Text: "internal thoughts"},
+	}
+	blocksJSON, _ := json.Marshal(blocks)
+	messages := []types.Message{
+		{Role: "assistant", Content: blocksJSON},
+	}
+	result, err := convertMessages(messages)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// All blocks unknown → no usable blocks → message skipped
+	if len(result) != 0 {
+		t.Errorf("expected 0 messages (unknown block types filtered), got %d", len(result))
+	}
+}
+
+func TestConvertMessages_MixedKnownAndUnknownBlocks(t *testing.T) {
+	// Known blocks should be kept; unknown blocks silently dropped.
+	blocks := []types.ContentBlock{
+		{Type: "text", Text: "Hello"},
+		{Type: "audio"},
+		{Type: "text", Text: "World"},
+	}
+	blocksJSON, _ := json.Marshal(blocks)
+	messages := []types.Message{
+		{Role: "user", Content: blocksJSON},
+	}
+	result, err := convertMessages(messages)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(result))
+	}
+	if len(result[0].Content) != 2 {
+		t.Fatalf("expected 2 content blocks (audio filtered), got %d", len(result[0].Content))
+	}
+}
+
+func TestConvertMessages_ToolUseStringInput(t *testing.T) {
+	// tool_use block where input is a JSON string instead of an object.
+	// Should not panic — the string is passed as the input value.
+	content := json.RawMessage(`[{"type":"tool_use","id":"toolu_str","name":"str_tool","input":"not an object"}]`)
+	messages := []types.Message{
+		{Role: "assistant", Content: content},
+	}
+	result, err := convertMessages(messages)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(result))
+	}
+	if result[0].Content[0].OfToolUse == nil {
+		t.Fatal("expected tool_use block")
+	}
+	if result[0].Content[0].OfToolUse.Name != "str_tool" {
+		t.Errorf("tool name = %q, want %q", result[0].Content[0].OfToolUse.Name, "str_tool")
+	}
+}
+
+func TestConvertMessages_ToolUseNullInput(t *testing.T) {
+	// tool_use block where input is JSON null. Should not panic.
+	content := json.RawMessage(`[{"type":"tool_use","id":"toolu_null","name":"null_tool","input":null}]`)
+	messages := []types.Message{
+		{Role: "assistant", Content: content},
+	}
+	result, err := convertMessages(messages)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(result))
+	}
+	if result[0].Content[0].OfToolUse == nil {
+		t.Fatal("expected tool_use block")
+	}
+}
+
+func TestConvertMessages_NullContent(t *testing.T) {
+	// JSON null unmarshals to empty string for a Go string type.
+	// For a user message, this creates a text block with empty text.
+	messages := []types.Message{
+		{Role: "user", Content: json.RawMessage(`null`)},
+	}
+	result, err := convertMessages(messages)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// null → empty string → user message with empty text is allowed
+	if len(result) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(result))
+	}
+}
+
+func TestConvertTools_InvalidSchema(t *testing.T) {
+	// Tool with invalid JSON schema should return error.
+	tools := []types.ToolDefinition{
+		{
+			Name:        "bad_tool",
+			Description: "broken schema",
+			InputSchema: json.RawMessage(`not json`),
+		},
+	}
+	_, err := convertTools(tools)
+	if err == nil {
+		t.Fatal("expected error for invalid tool schema JSON")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// processStreamEvents — error branch coverage
+// ---------------------------------------------------------------------------
+
+func TestProcessStreamEvents_StreamCloseMidContentBlock(t *testing.T) {
+	// Stream closes after content_block_start + delta but before content_block_stop.
+	// Partial content should not cause a panic. No Done event expected.
+	dec := &mockDecoder{events: []ssestream.Event{
+		makeEvent("message_start", map[string]interface{}{
+			"type": "message_start",
+			"message": map[string]interface{}{
+				"id": "msg_mid", "model": "claude-sonnet-4-20250514",
+				"usage": map[string]interface{}{"input_tokens": 5, "output_tokens": 0},
+			},
+		}),
+		makeEvent("content_block_start", map[string]interface{}{
+			"type": "content_block_start", "index": 0,
+			"content_block": map[string]interface{}{"type": "text"},
+		}),
+		makeEvent("content_block_delta", map[string]interface{}{
+			"type": "content_block_delta", "index": 0,
+			"delta": map[string]interface{}{"type": "text_delta", "text": "Hello"},
+		}),
+		// Stream closes here — no content_block_stop, no message_stop
+	}}
+
+	stream := ssestream.NewStream[anthropic.MessageStreamEventUnion](dec, nil)
+	events := make(chan types.StreamEvent, 20)
+	processStreamEvents(stream, events)
+	close(events)
+
+	var gotStart, gotDelta, gotDone bool
+	for ev := range events {
+		switch ev.Type {
+		case types.StreamEventStart:
+			gotStart = true
+		case types.StreamEventDelta:
+			gotDelta = true
+		case types.StreamEventDone:
+			gotDone = true
+		}
+	}
+	if !gotStart {
+		t.Error("expected start event")
+	}
+	if !gotDelta {
+		t.Error("expected delta event")
+	}
+	if gotDone {
+		t.Error("should not have done event when stream closes mid-content-block")
+	}
+}
+
+func TestProcessStreamEvents_UnknownContentBlockType(t *testing.T) {
+	// content_block_start with an unknown type (e.g. "thinking") should be
+	// silently ignored — no panic, and the Done event has no content blocks.
+	dec := &mockDecoder{events: []ssestream.Event{
+		makeEvent("message_start", map[string]interface{}{
+			"type": "message_start",
+			"message": map[string]interface{}{
+				"id": "msg_unk", "model": "claude-sonnet-4-20250514",
+				"usage": map[string]interface{}{"input_tokens": 5, "output_tokens": 0},
+			},
+		}),
+		makeEvent("content_block_start", map[string]interface{}{
+			"type": "content_block_start", "index": 0,
+			"content_block": map[string]interface{}{"type": "thinking"},
+		}),
+		makeEvent("content_block_delta", map[string]interface{}{
+			"type": "content_block_delta", "index": 0,
+			"delta": map[string]interface{}{"type": "thinking_delta", "thinking": "hmm"},
+		}),
+		makeEvent("content_block_stop", map[string]interface{}{
+			"type": "content_block_stop", "index": 0,
+		}),
+		makeEvent("message_delta", map[string]interface{}{
+			"type": "message_delta",
+			"delta": map[string]interface{}{"stop_reason": "end_turn"},
+			"usage": map[string]interface{}{"output_tokens": 0},
+		}),
+		makeEvent("message_stop", map[string]interface{}{
+			"type": "message_stop",
+		}),
+	}}
+
+	stream := ssestream.NewStream[anthropic.MessageStreamEventUnion](dec, nil)
+	events := make(chan types.StreamEvent, 20)
+	processStreamEvents(stream, events)
+	close(events)
+
+	var gotStart, gotDone bool
+	var doneResp *types.CompletionResponse
+	for ev := range events {
+		switch ev.Type {
+		case types.StreamEventStart:
+			gotStart = true
+		case types.StreamEventDone:
+			gotDone = true
+			doneResp = ev.Response
+		}
+	}
+	if !gotStart {
+		t.Error("expected start event")
+	}
+	if !gotDone {
+		t.Error("expected done event")
+	}
+	if doneResp == nil {
+		t.Fatal("expected response in done event")
+	}
+	if len(doneResp.Content) != 0 {
+		t.Errorf("expected 0 content blocks (unknown type ignored), got %d", len(doneResp.Content))
+	}
+}
+
+func TestProcessStreamEvents_StreamError(t *testing.T) {
+	// When the decoder returns an error after some events, processStreamEvents
+	// should emit a StreamEventError with the original error.
+	dec := &errDecoder{
+		events: []ssestream.Event{
+			makeEvent("message_start", map[string]interface{}{
+				"type": "message_start",
+				"message": map[string]interface{}{
+					"id": "msg_err", "model": "claude-sonnet-4-20250514",
+					"usage": map[string]interface{}{"input_tokens": 5, "output_tokens": 0},
+				},
+			}),
+		},
+		err: errors.New("connection reset by peer"),
+	}
+
+	stream := ssestream.NewStream[anthropic.MessageStreamEventUnion](dec, nil)
+	events := make(chan types.StreamEvent, 20)
+	processStreamEvents(stream, events)
+	close(events)
+
+	var gotError bool
+	for ev := range events {
+		if ev.Type == types.StreamEventError {
+			gotError = true
+			if ev.Error == nil {
+				t.Error("error event has nil Error")
+			} else if ev.Error.Error() != "connection reset by peer" {
+				t.Errorf("error = %q, want %q", ev.Error.Error(), "connection reset by peer")
+			}
+		}
+	}
+	if !gotError {
+		t.Fatal("expected error event from decoder error")
+	}
+}
+
+func TestProcessStreamEvents_StreamErrorAfterPartialContent(t *testing.T) {
+	// Stream delivers partial text deltas, then the connection drops.
+	// The deltas already emitted should be present; an error event follows.
+	dec := &errDecoder{
+		events: []ssestream.Event{
+			makeEvent("message_start", map[string]interface{}{
+				"type": "message_start",
+				"message": map[string]interface{}{
+					"id": "msg_partial", "model": "claude-sonnet-4-20250514",
+					"usage": map[string]interface{}{"input_tokens": 5, "output_tokens": 0},
+				},
+			}),
+			makeEvent("content_block_start", map[string]interface{}{
+				"type": "content_block_start", "index": 0,
+				"content_block": map[string]interface{}{"type": "text"},
+			}),
+			makeEvent("content_block_delta", map[string]interface{}{
+				"type": "content_block_delta", "index": 0,
+				"delta": map[string]interface{}{"type": "text_delta", "text": "Hello "},
+			}),
+			makeEvent("content_block_delta", map[string]interface{}{
+				"type": "content_block_delta", "index": 0,
+				"delta": map[string]interface{}{"type": "text_delta", "text": "wor"},
+			}),
+			// Connection drops here
+		},
+		err: errors.New("unexpected EOF"),
+	}
+
+	stream := ssestream.NewStream[anthropic.MessageStreamEventUnion](dec, nil)
+	events := make(chan types.StreamEvent, 20)
+	processStreamEvents(stream, events)
+	close(events)
+
+	var textContent string
+	var gotError bool
+	for ev := range events {
+		switch ev.Type {
+		case types.StreamEventDelta:
+			textContent += ev.Content
+		case types.StreamEventError:
+			gotError = true
+		}
+	}
+	if textContent != "Hello wor" {
+		t.Errorf("accumulated delta text = %q, want %q", textContent, "Hello wor")
+	}
+	if !gotError {
+		t.Fatal("expected error event after connection drop")
+	}
+}
+
+func TestProcessStreamEvents_NoMessageStart(t *testing.T) {
+	// Stream sends content events without a preceding message_start.
+	// Should not panic (fullResponse is nil, guarded by nil checks).
+	dec := &mockDecoder{events: []ssestream.Event{
+		makeEvent("content_block_start", map[string]interface{}{
+			"type": "content_block_start", "index": 0,
+			"content_block": map[string]interface{}{"type": "text"},
+		}),
+		makeEvent("content_block_delta", map[string]interface{}{
+			"type": "content_block_delta", "index": 0,
+			"delta": map[string]interface{}{"type": "text_delta", "text": "orphan"},
+		}),
+		makeEvent("content_block_stop", map[string]interface{}{
+			"type": "content_block_stop", "index": 0,
+		}),
+		makeEvent("message_stop", map[string]interface{}{
+			"type": "message_stop",
+		}),
+	}}
+
+	stream := ssestream.NewStream[anthropic.MessageStreamEventUnion](dec, nil)
+	events := make(chan types.StreamEvent, 20)
+	processStreamEvents(stream, events)
+	close(events)
+
+	// Should not panic. Delta events still emitted, but no Done (fullResponse is nil).
+	var gotDelta, gotDone bool
+	for ev := range events {
+		switch ev.Type {
+		case types.StreamEventDelta:
+			gotDelta = true
+		case types.StreamEventDone:
+			gotDone = true
+		}
+	}
+	if !gotDelta {
+		t.Error("expected delta event even without message_start")
+	}
+	if gotDone {
+		t.Error("should not emit Done when fullResponse is nil (no message_start)")
 	}
 }
