@@ -726,3 +726,50 @@ func TestStreamingErrorMidResponse(t *testing.T) {
 		t.Error("no done event — partial content should be saved")
 	}
 }
+
+// --- Phase 8b: Provider failure during streaming ---
+
+func TestStreamingProviderFailure(t *testing.T) {
+	_, mux := testServerWithMock(t, "", mockprovider.Config{
+		Mode:  "error",
+		Error: fmt.Errorf("provider unavailable"),
+	})
+
+	reqBody := `{"message":"Hello","stream":true}`
+	req := httptest.NewRequest("POST", "/prompt", strings.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	// Content-Type should be text/event-stream (headers set before Prompt call)
+	ct := w.Header().Get("Content-Type")
+	if !strings.HasPrefix(ct, "text/event-stream") {
+		t.Errorf("Content-Type = %q, want text/event-stream prefix", ct)
+	}
+
+	// Body should contain SSE error event, not JSON error
+	respBody := w.Body.String()
+	if !strings.Contains(respBody, "event: error") {
+		t.Errorf("expected SSE error event, got: %s", respBody)
+	}
+
+	events := parseSSEEvents(respBody)
+	if len(events) == 0 {
+		t.Fatal("no SSE events parsed")
+	}
+
+	// Should have exactly one error event with wrapped provider error
+	if events[0].Type != "error" {
+		t.Errorf("first event type = %q, want %q", events[0].Type, "error")
+	}
+	if !strings.Contains(events[0].Data, "provider unavailable") {
+		t.Errorf("error data = %q, want to contain %q", events[0].Data, "provider unavailable")
+	}
+
+	// Should NOT have start or done events (provider failed before stream started)
+	for _, e := range events {
+		if e.Type == "start" || e.Type == "done" {
+			t.Errorf("unexpected %q event when provider.Stream() fails", e.Type)
+		}
+	}
+}
