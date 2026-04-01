@@ -371,6 +371,112 @@ func TestStreamRequest_HTTP200WithErrorEvent(t *testing.T) {
 	}
 }
 
+func TestStreamRequest_ConnectionDropMidStream(t *testing.T) {
+	// Server sends partial SSE then closes the connection abruptly
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		flusher, _ := w.(http.Flusher)
+		w.Write([]byte("event: start\ndata: {}\n\n"))
+		flusher.Flush()
+		w.Write([]byte("event: delta\ndata: {\"content\":\"before drop\"}\n\n"))
+		flusher.Flush()
+		// Hijack the connection and close it abruptly (no done event)
+		hijacker, ok := w.(http.Hijacker)
+		if !ok {
+			t.Fatal("server does not support hijacking")
+		}
+		conn, _, _ := hijacker.Hijack()
+		conn.Close()
+	}))
+	defer server.Close()
+
+	c := NewClient(server.URL)
+	stream, err := c.PromptStream(context.Background(), "test")
+	if err != nil {
+		t.Fatalf("PromptStream should not error for HTTP 200: %v", err)
+	}
+
+	done := make(chan struct{})
+	var events []SSEEvent
+	go func() {
+		for event := range stream.Events() {
+			events = append(events, event)
+		}
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// good - stream completed
+	case <-time.After(5 * time.Second):
+		t.Fatal("stream hung after connection drop")
+	}
+
+	// Should have received start + delta before the drop
+	if len(events) < 2 {
+		t.Fatalf("expected at least 2 events, got %d", len(events))
+	}
+
+	// Content should have the data from before the drop
+	if stream.Content() != "before drop" {
+		t.Errorf("expected 'before drop', got %q", stream.Content())
+	}
+
+	// Node() should return error (no done event)
+	_, nodeErr := stream.Node()
+	if nodeErr == nil {
+		t.Fatal("expected error from Node() after connection drop")
+	}
+}
+
+func TestStreamRequest_ConnectionDropMidEvent(t *testing.T) {
+	// Server sends partial SSE data mid-event (incomplete line)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		flusher, _ := w.(http.Flusher)
+		w.Write([]byte("event: start\ndata: {}\n\n"))
+		flusher.Flush()
+		// Write partial event (no closing newline or data)
+		w.Write([]byte("event: delta\ndata: {\"content\":\"mid"))
+		flusher.Flush()
+		// Close abruptly
+		hijacker, ok := w.(http.Hijacker)
+		if !ok {
+			t.Fatal("server does not support hijacking")
+		}
+		conn, _, _ := hijacker.Hijack()
+		conn.Close()
+	}))
+	defer server.Close()
+
+	c := NewClient(server.URL)
+	stream, err := c.PromptStream(context.Background(), "test")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	done := make(chan struct{})
+	go func() {
+		for range stream.Events() {
+		}
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("stream hung after mid-event connection drop")
+	}
+
+	// Node() should return error
+	_, nodeErr := stream.Node()
+	if nodeErr == nil {
+		t.Fatal("expected error from Node() after mid-event drop")
+	}
+}
+
 func TestStreamRequest_HTTP500BeforeStreaming(t *testing.T) {
 	// Server returns HTTP 500 with JSON error body before streaming starts
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
