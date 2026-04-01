@@ -2,6 +2,8 @@ package gemini
 
 import (
 	"encoding/json"
+	"errors"
+	"io"
 	"strings"
 	"testing"
 
@@ -627,5 +629,411 @@ func TestBuildRequest_ThinkNil(t *testing.T) {
 	// Also verify no generation_config at all (no other config fields set)
 	if strings.Contains(string(body), `"generation_config"`) {
 		t.Errorf("expected no generation_config when no config fields set, got: %s", string(body))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// convertMessages — error branch coverage
+// ---------------------------------------------------------------------------
+
+func TestConvertMessages_MalformedJSON(t *testing.T) {
+	// Content that is neither valid string nor valid []ContentBlock
+	// falls back to raw string — no panic.
+	messages := []types.Message{
+		{Role: "user", Content: json.RawMessage(`{invalid}`)},
+	}
+	result := convertMessages(messages)
+	if len(result) != 1 {
+		t.Fatalf("expected 1 content, got %d", len(result))
+	}
+	if result[0].Parts[0].Text != `{invalid}` {
+		t.Errorf("expected raw fallback text, got %q", result[0].Parts[0].Text)
+	}
+}
+
+func TestConvertMessages_EmptyContentArray(t *testing.T) {
+	// Empty block array → no parts → message skipped.
+	messages := []types.Message{
+		{Role: "user", Content: json.RawMessage(`[]`)},
+	}
+	result := convertMessages(messages)
+	if len(result) != 0 {
+		t.Errorf("expected 0 contents (empty parts skipped), got %d", len(result))
+	}
+}
+
+func TestConvertMessages_UnknownBlockTypes(t *testing.T) {
+	// Unknown block types should be silently skipped.
+	blocks := []types.ContentBlock{
+		{Type: "audio", Text: "audio data"},
+		{Type: "text", Text: "Hello"},
+	}
+	content, _ := json.Marshal(blocks)
+	messages := []types.Message{
+		{Role: "user", Content: content},
+	}
+	result := convertMessages(messages)
+	if len(result) != 1 {
+		t.Fatalf("expected 1 content, got %d", len(result))
+	}
+	if len(result[0].Parts) != 1 {
+		t.Fatalf("expected 1 part (audio skipped), got %d", len(result[0].Parts))
+	}
+	if result[0].Parts[0].Text != "Hello" {
+		t.Errorf("text = %q, want %q", result[0].Parts[0].Text, "Hello")
+	}
+}
+
+func TestConvertMessages_FunctionCallNilArgs(t *testing.T) {
+	// tool_use with nil Input → args is nil → FunctionCall.Args is nil.
+	blocks := []types.ContentBlock{
+		{Type: "tool_use", Name: "no_args"},
+	}
+	content, _ := json.Marshal(blocks)
+	messages := []types.Message{
+		{Role: "assistant", Content: content},
+	}
+	result := convertMessages(messages)
+	if len(result) != 1 {
+		t.Fatalf("expected 1 content, got %d", len(result))
+	}
+	fc := result[0].Parts[0].FunctionCall
+	if fc == nil {
+		t.Fatal("expected FunctionCall part")
+	}
+	if fc.Name != "no_args" {
+		t.Errorf("name = %q, want %q", fc.Name, "no_args")
+	}
+	if fc.Args != nil {
+		t.Errorf("expected nil Args, got %v", fc.Args)
+	}
+}
+
+func TestConvertMessages_FunctionResponseNonJSON(t *testing.T) {
+	// tool_result content is always wrapped as {"result": content}.
+	blocks := []types.ContentBlock{
+		{Type: "tool_result", ToolUseID: "fn", Content: "plain text result"},
+	}
+	content, _ := json.Marshal(blocks)
+	messages := []types.Message{
+		{Role: "user", Content: content},
+	}
+	result := convertMessages(messages)
+	if len(result) != 1 {
+		t.Fatalf("expected 1 content, got %d", len(result))
+	}
+	fr := result[0].Parts[0].FunctionResponse
+	if fr == nil {
+		t.Fatal("expected FunctionResponse part")
+	}
+	if fr.Name != "fn" {
+		t.Errorf("name = %q, want %q", fr.Name, "fn")
+	}
+	if fr.Response["result"] != "plain text result" {
+		t.Errorf("response = %v, want {result: plain text result}", fr.Response)
+	}
+}
+
+func TestConvertMessages_ImageNoDataNoURL(t *testing.T) {
+	// Image block with neither Data nor URL should produce no part.
+	blocks := []types.ContentBlock{
+		{Type: "image", MediaType: "image/png"},
+		{Type: "text", Text: "fallback"},
+	}
+	content, _ := json.Marshal(blocks)
+	messages := []types.Message{
+		{Role: "user", Content: content},
+	}
+	result := convertMessages(messages)
+	if len(result) != 1 {
+		t.Fatalf("expected 1 content, got %d", len(result))
+	}
+	if len(result[0].Parts) != 1 {
+		t.Fatalf("expected 1 part (empty image skipped), got %d", len(result[0].Parts))
+	}
+	if result[0].Parts[0].Text != "fallback" {
+		t.Errorf("text = %q, want %q", result[0].Parts[0].Text, "fallback")
+	}
+}
+
+func TestConvertMessages_NullContent(t *testing.T) {
+	// null JSON content should not panic.
+	messages := []types.Message{
+		{Role: "user", Content: json.RawMessage(`null`)},
+	}
+	result := convertMessages(messages)
+	if len(result) != 1 {
+		t.Fatalf("expected 1 content, got %d", len(result))
+	}
+}
+
+func TestConvertMessages_AllUnknownBlocksSkipsMessage(t *testing.T) {
+	// If all blocks are unknown, parts is empty → message skipped.
+	blocks := []types.ContentBlock{
+		{Type: "audio"},
+		{Type: "video"},
+	}
+	content, _ := json.Marshal(blocks)
+	messages := []types.Message{
+		{Role: "user", Content: content},
+	}
+	result := convertMessages(messages)
+	if len(result) != 0 {
+		t.Errorf("expected 0 contents (all unknown blocks), got %d", len(result))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// convertResponse — error branch coverage
+// ---------------------------------------------------------------------------
+
+func TestConvertResponse_NoCandidates(t *testing.T) {
+	resp := &geminiResponse{
+		UsageMetadata: &usageMetadata{PromptTokenCount: 10},
+	}
+	result := convertResponse(resp)
+	if len(result.Content) != 0 {
+		t.Errorf("expected 0 content blocks, got %d", len(result.Content))
+	}
+	if result.StopReason != "" {
+		t.Errorf("expected empty stop reason, got %q", result.StopReason)
+	}
+	if result.Usage.InputTokens != 10 {
+		t.Errorf("InputTokens = %d, want 10", result.Usage.InputTokens)
+	}
+}
+
+func TestConvertResponse_EmptyContent(t *testing.T) {
+	resp := &geminiResponse{
+		Candidates: []candidate{
+			{Content: content{Parts: []part{}}, FinishReason: "STOP"},
+		},
+	}
+	result := convertResponse(resp)
+	if len(result.Content) != 0 {
+		t.Errorf("expected 0 content blocks, got %d", len(result.Content))
+	}
+	if result.StopReason != "stop" {
+		t.Errorf("stop reason = %q, want %q", result.StopReason, "stop")
+	}
+}
+
+func TestConvertResponse_FinishReasonNoContent(t *testing.T) {
+	// Candidate with finish reason but no actual content (e.g., safety filter).
+	resp := &geminiResponse{
+		Candidates: []candidate{
+			{FinishReason: "SAFETY"},
+		},
+	}
+	result := convertResponse(resp)
+	if result.StopReason != "safety" {
+		t.Errorf("stop reason = %q, want %q", result.StopReason, "safety")
+	}
+	if len(result.Content) != 0 {
+		t.Errorf("expected 0 content blocks, got %d", len(result.Content))
+	}
+}
+
+func TestConvertResponse_NilUsageMetadata(t *testing.T) {
+	resp := &geminiResponse{
+		Candidates: []candidate{
+			{Content: content{Parts: []part{{Text: "Hi"}}}, FinishReason: "STOP"},
+		},
+	}
+	result := convertResponse(resp)
+	if result.Usage.InputTokens != 0 {
+		t.Errorf("expected 0 InputTokens with nil usage, got %d", result.Usage.InputTokens)
+	}
+}
+
+func TestConvertResponse_FunctionCallNilArgs(t *testing.T) {
+	// FunctionCall with nil Args should not panic.
+	resp := &geminiResponse{
+		Candidates: []candidate{
+			{Content: content{Parts: []part{
+				{FunctionCall: &functionCall{Name: "noargs"}},
+			}}},
+		},
+	}
+	result := convertResponse(resp)
+	if len(result.Content) != 1 {
+		t.Fatalf("expected 1 content block, got %d", len(result.Content))
+	}
+	if result.Content[0].Name != "noargs" {
+		t.Errorf("name = %q, want %q", result.Content[0].Name, "noargs")
+	}
+	// nil Args should marshal to "null"
+	if string(result.Content[0].Input) != "null" {
+		t.Errorf("input = %q, want %q", string(result.Content[0].Input), "null")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// parseSSEStream — error branch coverage
+// ---------------------------------------------------------------------------
+
+func TestParseSSEStream_MalformedJSON(t *testing.T) {
+	// Malformed JSON data lines should be silently skipped.
+	sseData := `data: {"candidates":[{"content":{"parts":[{"text":"Hello"}]}}]}
+
+data: {invalid json}
+
+data: {"candidates":[{"content":{"parts":[{"text":"Hello world"}]},"finishReason":"STOP"}]}
+
+`
+	events := make(chan types.StreamEvent, 20)
+	go func() {
+		defer close(events)
+		parseSSEStream(strings.NewReader(sseData), events)
+	}()
+
+	var text string
+	for ev := range events {
+		if ev.Type == types.StreamEventDelta {
+			text += ev.Content
+		}
+	}
+	if text != "Hello world" {
+		t.Errorf("text = %q, want %q", text, "Hello world")
+	}
+}
+
+func TestParseSSEStream_NoCandidates(t *testing.T) {
+	// Response with no candidates should be skipped (no delta).
+	sseData := `data: {"usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":0}}
+
+data: {"candidates":[{"content":{"parts":[{"text":"Hi"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":1}}
+
+`
+	events := make(chan types.StreamEvent, 20)
+	go func() {
+		defer close(events)
+		parseSSEStream(strings.NewReader(sseData), events)
+	}()
+
+	var text string
+	var doneResp *types.CompletionResponse
+	for ev := range events {
+		if ev.Type == types.StreamEventDelta {
+			text += ev.Content
+		}
+		if ev.Type == types.StreamEventDone {
+			doneResp = ev.Response
+		}
+	}
+	if text != "Hi" {
+		t.Errorf("text = %q, want %q", text, "Hi")
+	}
+	if doneResp == nil {
+		t.Fatal("expected done response")
+	}
+	if doneResp.Usage.InputTokens != 10 {
+		t.Errorf("InputTokens = %d, want 10", doneResp.Usage.InputTokens)
+	}
+}
+
+func TestParseSSEStream_EmptyStream(t *testing.T) {
+	// Empty stream should emit start + done (empty response).
+	events := make(chan types.StreamEvent, 20)
+	go func() {
+		defer close(events)
+		parseSSEStream(strings.NewReader(""), events)
+	}()
+
+	var gotStart, gotDone bool
+	for ev := range events {
+		switch ev.Type {
+		case types.StreamEventStart:
+			gotStart = true
+		case types.StreamEventDone:
+			gotDone = true
+		}
+	}
+	if !gotStart {
+		t.Error("expected start event")
+	}
+	if !gotDone {
+		t.Error("expected done event")
+	}
+}
+
+func TestParseSSEStream_EmptyCandidateContent(t *testing.T) {
+	// Candidate with empty content parts → no delta, no tool events.
+	sseData := `data: {"candidates":[{"content":{"parts":[]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":5,"candidatesTokenCount":0}}
+
+`
+	events := make(chan types.StreamEvent, 20)
+	go func() {
+		defer close(events)
+		parseSSEStream(strings.NewReader(sseData), events)
+	}()
+
+	var deltaCount int
+	for ev := range events {
+		if ev.Type == types.StreamEventDelta {
+			deltaCount++
+		}
+	}
+	if deltaCount != 0 {
+		t.Errorf("expected 0 deltas, got %d", deltaCount)
+	}
+}
+
+func TestParseSSEStream_ReadError(t *testing.T) {
+	// Read error mid-stream. Gemini parser doesn't emit error events
+	// (unlike OpenAI) — it just emits done with whatever was accumulated.
+	// Verify no panic.
+	pr, pw := io.Pipe()
+
+	go func() {
+		pw.Write([]byte("data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"Hello\"}]}}]}\n\n"))
+		pw.CloseWithError(errors.New("connection reset"))
+	}()
+
+	events := make(chan types.StreamEvent, 20)
+	go func() {
+		defer close(events)
+		parseSSEStream(pr, events)
+	}()
+
+	var text string
+	var gotDone bool
+	for ev := range events {
+		switch ev.Type {
+		case types.StreamEventDelta:
+			text += ev.Content
+		case types.StreamEventDone:
+			gotDone = true
+		}
+	}
+	if text != "Hello" {
+		t.Errorf("text = %q, want %q", text, "Hello")
+	}
+	if !gotDone {
+		t.Error("expected done event")
+	}
+}
+
+func TestParseSSEStream_NonDataLinesIgnored(t *testing.T) {
+	sseData := `: comment line
+event: message
+
+data: {"candidates":[{"content":{"parts":[{"text":"Hi"}]},"finishReason":"STOP"}]}
+
+`
+	events := make(chan types.StreamEvent, 20)
+	go func() {
+		defer close(events)
+		parseSSEStream(strings.NewReader(sseData), events)
+	}()
+
+	var text string
+	for ev := range events {
+		if ev.Type == types.StreamEventDelta {
+			text += ev.Content
+		}
+	}
+	if text != "Hi" {
+		t.Errorf("text = %q, want %q", text, "Hi")
 	}
 }
