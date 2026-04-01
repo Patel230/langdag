@@ -346,6 +346,112 @@ data: {"content":"world!"}
 	}
 }
 
+func TestStream_MalformedAmongValidDeltas(t *testing.T) {
+	// One malformed delta among valid ones: valid content should still accumulate
+	input := `event: start
+data: {}
+
+event: delta
+data: {"content":"Hello "}
+
+event: delta
+data: {CORRUPT}
+
+event: delta
+data: {"content":"world!"}
+
+event: done
+data: {"node_id":"n-ok"}
+
+`
+	body := io.NopCloser(strings.NewReader(input))
+	stream := newStream(body, nil)
+
+	var events []SSEEvent
+	for event := range stream.Events() {
+		events = append(events, event)
+	}
+
+	if len(events) != 5 {
+		t.Fatalf("expected 5 events, got %d", len(events))
+	}
+
+	// Malformed delta is emitted with empty Content (not skipped)
+	if events[2].Type != "delta" || events[2].Content != "" {
+		t.Errorf("malformed delta: expected empty content, got %q", events[2].Content)
+	}
+
+	// Content() accumulates only successfully parsed deltas
+	if stream.Content() != "Hello world!" {
+		t.Errorf("expected 'Hello world!', got %q", stream.Content())
+	}
+
+	// No stream-level error: malformed JSON is silently ignored per-event
+	if stream.Err() != nil {
+		t.Errorf("expected no stream error, got %v", stream.Err())
+	}
+
+	// Node() should succeed (done event was received)
+	node, err := stream.Node()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if node.ID != "n-ok" {
+		t.Errorf("expected n-ok, got %s", node.ID)
+	}
+}
+
+func TestStream_ErrMethod(t *testing.T) {
+	// Verify Err() returns nil on success, non-nil on error
+	t.Run("success", func(t *testing.T) {
+		input := "event: done\ndata: {\"node_id\":\"n-1\"}\n\n"
+		body := io.NopCloser(strings.NewReader(input))
+		stream := newStream(body, nil)
+		for range stream.Events() {
+		}
+		if stream.Err() != nil {
+			t.Errorf("expected nil error, got %v", stream.Err())
+		}
+	})
+
+	t.Run("error_event", func(t *testing.T) {
+		input := "event: error\ndata: provider crashed\n\n"
+		body := io.NopCloser(strings.NewReader(input))
+		stream := newStream(body, nil)
+		for range stream.Events() {
+		}
+		err := stream.Err()
+		if err == nil {
+			t.Fatal("expected error from Err()")
+		}
+		streamErr, ok := err.(*StreamError)
+		if !ok {
+			t.Fatalf("expected *StreamError, got %T", err)
+		}
+		if streamErr.Message != "provider crashed" {
+			t.Errorf("expected 'provider crashed', got %q", streamErr.Message)
+		}
+	})
+
+	t.Run("io_error", func(t *testing.T) {
+		r := &errorReader{
+			data: "event: start\ndata: {}\n\n",
+			err:  errors.New("network failure"),
+		}
+		body := io.NopCloser(r)
+		stream := newStream(body, nil)
+		for range stream.Events() {
+		}
+		err := stream.Err()
+		if err == nil {
+			t.Fatal("expected error from Err()")
+		}
+		if err.Error() != "network failure" {
+			t.Errorf("expected 'network failure', got %q", err.Error())
+		}
+	})
+}
+
 func TestStream_NoDoneEvent_ConnectionClose(t *testing.T) {
 	// Simulates abrupt connection close after partial deltas (no trailing newline)
 	input := "event: start\ndata: {}\n\nevent: delta\ndata: {\"content\":\"partial\"}"
