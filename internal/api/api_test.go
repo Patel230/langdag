@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -586,5 +587,142 @@ func TestBranching(t *testing.T) {
 	// = 6 nodes total
 	if len(tree) < 6 {
 		t.Errorf("branching tree: got %d nodes, want >= 6", len(tree))
+	}
+}
+
+// testServerWithMock creates a Server with a custom mock provider config.
+func testServerWithMock(t *testing.T, apiKey string, mockCfg mockprovider.Config) (*Server, *http.ServeMux) {
+	t.Helper()
+
+	tmpFile, err := os.CreateTemp("", "langdag-api-test-*.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpFile.Close()
+	t.Cleanup(func() { os.Remove(tmpFile.Name()) })
+
+	store, err := sqlite.New(tmpFile.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+
+	if err := store.Init(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	prov := mockprovider.New(mockCfg)
+	convMgr := conversation.NewManager(store, prov)
+
+	s := &Server{
+		store:   store,
+		convMgr: convMgr,
+		apiKey:  apiKey,
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /health", s.handleHealth)
+	mux.HandleFunc("POST /prompt", s.authMiddleware(s.handlePrompt))
+	mux.HandleFunc("POST /nodes/{id}/prompt", s.authMiddleware(s.handleNodePrompt))
+	mux.HandleFunc("GET /nodes", s.authMiddleware(s.handleListNodes))
+	mux.HandleFunc("GET /nodes/{id}", s.authMiddleware(s.handleGetNode))
+	mux.HandleFunc("GET /nodes/{id}/tree", s.authMiddleware(s.handleGetTree))
+	mux.HandleFunc("DELETE /nodes/{id}", s.authMiddleware(s.handleDeleteNode))
+
+	return s, mux
+}
+
+// sseEvent represents a parsed SSE event.
+type sseEvent struct {
+	Type string
+	Data string
+}
+
+// parseSSEEvents parses SSE response body into event type/data pairs.
+func parseSSEEvents(body string) []sseEvent {
+	var events []sseEvent
+	lines := strings.Split(body, "\n")
+	var currentType string
+	var dataLines []string
+	for _, line := range lines {
+		if strings.HasPrefix(line, "event: ") {
+			currentType = strings.TrimPrefix(line, "event: ")
+		} else if strings.HasPrefix(line, "data: ") {
+			dataLines = append(dataLines, strings.TrimPrefix(line, "data: "))
+		} else if line == "" && currentType != "" {
+			events = append(events, sseEvent{
+				Type: currentType,
+				Data: strings.Join(dataLines, "\n"),
+			})
+			currentType = ""
+			dataLines = nil
+		}
+	}
+	return events
+}
+
+// --- Phase 8a: Streaming error mid-response ---
+
+func TestStreamingErrorMidResponse(t *testing.T) {
+	_, mux := testServerWithMock(t, "", mockprovider.Config{
+		Mode:             "stream_error",
+		FixedResponse:    "one two three four five",
+		ErrorAfterChunks: 3,
+		Error:            fmt.Errorf("provider crashed mid-stream"),
+	})
+
+	reqBody := `{"message":"Hello","stream":true}`
+	req := httptest.NewRequest("POST", "/prompt", strings.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	events := parseSSEEvents(w.Body.String())
+	if len(events) == 0 {
+		t.Fatal("no SSE events received")
+	}
+
+	// First event: start
+	if events[0].Type != "start" {
+		t.Errorf("first event type = %q, want %q", events[0].Type, "start")
+	}
+
+	// Count deltas — should be exactly 3 (ErrorAfterChunks)
+	var deltaCount int
+	for _, e := range events {
+		if e.Type == "delta" {
+			deltaCount++
+		}
+	}
+	if deltaCount != 3 {
+		t.Errorf("delta count = %d, want 3", deltaCount)
+	}
+
+	// Should contain error event with provider error message
+	var foundError bool
+	for _, e := range events {
+		if e.Type == "error" {
+			foundError = true
+			if !strings.Contains(e.Data, "provider crashed mid-stream") {
+				t.Errorf("error data = %q, want to contain %q", e.Data, "provider crashed mid-stream")
+			}
+		}
+	}
+	if !foundError {
+		t.Error("no error event found in SSE stream")
+	}
+
+	// Should also have done event (partial content saved as node)
+	var foundDone bool
+	for _, e := range events {
+		if e.Type == "done" {
+			foundDone = true
+			if !strings.Contains(e.Data, "node_id") {
+				t.Errorf("done event missing node_id: %s", e.Data)
+			}
+		}
+	}
+	if !foundDone {
+		t.Error("no done event — partial content should be saved")
 	}
 }
