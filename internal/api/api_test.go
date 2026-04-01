@@ -773,3 +773,62 @@ func TestStreamingProviderFailure(t *testing.T) {
 		}
 	}
 }
+
+// --- Phase 8c: Non-streaming error responses ---
+
+func TestNonStreamingProviderError(t *testing.T) {
+	_, mux := testServerWithMock(t, "", mockprovider.Config{
+		Mode:  "error",
+		Error: fmt.Errorf("authentication failed"),
+	})
+
+	body := `{"message":"Hello"}`
+	req := httptest.NewRequest("POST", "/prompt", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusInternalServerError)
+	}
+
+	ct := w.Header().Get("Content-Type")
+	if !strings.HasPrefix(ct, "application/json") {
+		t.Errorf("Content-Type = %q, want application/json", ct)
+	}
+
+	var errResp map[string]string
+	json.NewDecoder(w.Body).Decode(&errResp)
+	if errResp["error"] == "" {
+		t.Error("error field is empty")
+	}
+	if !strings.Contains(errResp["error"], "authentication failed") {
+		t.Errorf("error = %q, want to contain %q", errResp["error"], "authentication failed")
+	}
+}
+
+func TestNonStreamingMidStreamError(t *testing.T) {
+	// stream_error mode used non-streaming: collectEvents encounters StreamEventError
+	_, mux := testServerWithMock(t, "", mockprovider.Config{
+		Mode:             "stream_error",
+		FixedResponse:    "one two three four",
+		ErrorAfterChunks: 2,
+		Error:            fmt.Errorf("connection reset"),
+	})
+
+	body := `{"message":"Hello"}`
+	req := httptest.NewRequest("POST", "/prompt", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusInternalServerError)
+	}
+
+	var errResp map[string]string
+	json.NewDecoder(w.Body).Decode(&errResp)
+	if !strings.Contains(errResp["error"], "connection reset") {
+		t.Errorf("error = %q, want to contain %q", errResp["error"], "connection reset")
+	}
+}
