@@ -682,9 +682,41 @@ describe('LangDAGClient', () => {
   // --- 4c: Client edge case tests ---
 
   describe('client edge cases', () => {
+    // --- 11e: Response.body null ---
+
     it('response body null throws NetworkError for streaming', async () => {
       const fetchFn = mockFetch({
         body: null,
+      });
+      const client = new LangDAGClient({ fetch: fetchFn });
+      await expect(client.promptStream('Hello')).rejects.toThrow(NetworkError);
+      // Verify descriptive message
+      await expect(client.promptStream('Hello')).rejects.toThrow('Response body is null');
+    });
+
+    it('response body null throws NetworkError for streaming continuation', async () => {
+      // First call returns a valid node, second (streaming) returns null body
+      const fetchFn = vi.fn()
+        .mockResolvedValueOnce({
+          ok: true, status: 200, statusText: 'OK',
+          json: () => Promise.resolve({ node_id: 'n-1', content: 'First' }),
+          headers: new Headers(),
+        } as Response)
+        .mockResolvedValueOnce({
+          ok: true, status: 200, statusText: 'OK',
+          body: null,
+          headers: new Headers(),
+        } as Response);
+
+      const client = new LangDAGClient({ fetch: fetchFn });
+      const node = await client.prompt('Hello');
+      // promptStreamFrom path
+      await expect(node.promptStream('Continue')).rejects.toThrow(NetworkError);
+    });
+
+    it('response body undefined treated as null for streaming', async () => {
+      const fetchFn = mockFetch({
+        body: undefined as unknown as null,
       });
       const client = new LangDAGClient({ fetch: fetchFn });
       await expect(client.promptStream('Hello')).rejects.toThrow(NetworkError);
