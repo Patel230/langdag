@@ -117,3 +117,15 @@ Malformed JSON in `delta` or `done` payloads:
 | TypeScript | Strict: `SSEParseError` thrown, stops iteration | Fail-fast — catches protocol bugs early |
 
 This divergence is intentional. Each approach serves its language ecosystem's conventions. The server always sends valid JSON for `delta` and `done` events — malformed data indicates a bug or corruption, and the SDK's job is to surface it in the way most natural for its users.
+
+## Unknown Event Types (SDK-Specific)
+
+If the server sends an event with an unrecognized type (e.g., `event: custom`):
+
+| SDK | Behavior | Rationale |
+|-----|----------|-----------|
+| Go | Silent: event emitted with the unknown type string | Forwards all data — caller can inspect `event.Type` |
+| Python | Skipped: event not yielded to caller | Only known `SSEEventType` enum values are surfaced |
+| TypeScript | Strict: `SSEParseError` thrown, stops iteration | Fail-fast — detects protocol version mismatches early |
+
+This divergence is also intentional. The server currently only sends `start`, `delta`, `done`, and `error` events. Unknown types indicate either a protocol version mismatch or a bug. Each SDK handles this in its ecosystem's idiomatic way. If new event types are added to the protocol, SDKs must be updated to handle them — this is by design, as new event types would change the streaming contract.

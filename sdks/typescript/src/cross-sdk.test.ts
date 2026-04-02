@@ -130,6 +130,70 @@ describe('Cross-SDK: Multi-line error', () => {
   });
 });
 
+// --- Documented SDK-specific behavior ---
+// These tests document intentional divergences from other SDKs.
+
+describe('Cross-SDK: Malformed delta JSON (TS throws SSEParseError)', () => {
+  // TypeScript SDK: malformed JSON in delta → SSEParseError thrown
+  // (Go emits with empty Content, Python wraps as {"message": ...})
+
+  it('throws SSEParseError on malformed delta', async () => {
+    const fixture =
+      'event: start\ndata: {}\n\n' +
+      'event: delta\ndata: {CORRUPT}\n\n' +
+      'event: delta\ndata: {"content":"valid"}\n\n' +
+      'event: done\ndata: {"node_id":"n-1"}\n\n';
+
+    const events: SSEEvent[] = [];
+    let caughtError: Error | null = null;
+    try {
+      for await (const event of parseSSEStream(createStream(fixture))) {
+        events.push(event);
+      }
+    } catch (err) {
+      caughtError = err as Error;
+    }
+
+    // Start event received before the malformed delta
+    expect(events.length).toBe(1);
+    expect(events[0].type).toBe('start');
+
+    // SSEParseError thrown — stops iteration at malformed delta
+    expect(caughtError).not.toBeNull();
+    expect(caughtError!.constructor.name).toBe('SSEParseError');
+  });
+});
+
+describe('Cross-SDK: Unknown event type (TS throws SSEParseError)', () => {
+  // TypeScript SDK: unknown event types → SSEParseError thrown
+  // (Go forwards them, Python skips them)
+
+  it('throws SSEParseError on unknown event type', async () => {
+    const fixture =
+      'event: start\ndata: {}\n\n' +
+      'event: custom_event\ndata: {}\n\n' +
+      'event: done\ndata: {"node_id":"n-1"}\n\n';
+
+    const events: SSEEvent[] = [];
+    let caughtError: Error | null = null;
+    try {
+      for await (const event of parseSSEStream(createStream(fixture))) {
+        events.push(event);
+      }
+    } catch (err) {
+      caughtError = err as Error;
+    }
+
+    // Start event received before the unknown event
+    expect(events.length).toBe(1);
+    expect(events[0].type).toBe('start');
+
+    // SSEParseError thrown at unknown event type
+    expect(caughtError).not.toBeNull();
+    expect(caughtError!.constructor.name).toBe('SSEParseError');
+  });
+});
+
 describe('Cross-SDK: Error only', () => {
   it('produces single error event', async () => {
     const events = await collectEvents(FIXTURE_ERROR_ONLY);

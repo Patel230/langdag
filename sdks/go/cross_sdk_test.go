@@ -156,6 +156,59 @@ func TestCrossSDK_MultiLineError(t *testing.T) {
 	}
 }
 
+// --- Documented SDK-specific behavior ---
+// These tests document intentional divergences from other SDKs.
+
+func TestCrossSDK_MalformedDeltaJSON_GoSilent(t *testing.T) {
+	// Go SDK: malformed JSON in delta → event emitted with empty Content, stream continues
+	// (Python wraps as {"message": ...}, TypeScript throws SSEParseError)
+	input := "event: start\ndata: {}\n\n" +
+		"event: delta\ndata: {CORRUPT}\n\n" +
+		"event: delta\ndata: {\"content\":\"valid\"}\n\n" +
+		"event: done\ndata: {\"node_id\":\"n-1\"}\n\n"
+
+	s := streamFromFixture(input)
+	events := drainEvents(s)
+
+	if len(events) != 4 {
+		t.Fatalf("expected 4 events, got %d", len(events))
+	}
+	// Malformed delta is emitted with empty Content (not skipped)
+	if events[1].Type != "delta" || events[1].Content != "" {
+		t.Errorf("malformed delta: expected empty content, got %q", events[1].Content)
+	}
+	// Valid delta after malformed one still works
+	if events[2].Content != "valid" {
+		t.Errorf("expected 'valid', got %q", events[2].Content)
+	}
+	// No stream-level error
+	if s.Err() != nil {
+		t.Errorf("expected nil error, got %v", s.Err())
+	}
+	// Content only includes valid deltas
+	if s.Content() != "valid" {
+		t.Errorf("expected 'valid', got %q", s.Content())
+	}
+}
+
+func TestCrossSDK_UnknownEventType_GoForwards(t *testing.T) {
+	// Go SDK: unknown event types are forwarded as-is
+	// (Python skips them, TypeScript throws SSEParseError)
+	input := "event: start\ndata: {}\n\n" +
+		"event: custom_event\ndata: {\"foo\":\"bar\"}\n\n" +
+		"event: done\ndata: {\"node_id\":\"n-1\"}\n\n"
+
+	s := streamFromFixture(input)
+	events := drainEvents(s)
+
+	if len(events) != 3 {
+		t.Fatalf("expected 3 events (start + custom + done), got %d", len(events))
+	}
+	if events[1].Type != "custom_event" {
+		t.Errorf("expected type 'custom_event', got %q", events[1].Type)
+	}
+}
+
 func TestCrossSDK_ErrorOnly(t *testing.T) {
 	s := streamFromFixture(fixtureErrorOnly)
 	events := drainEvents(s)

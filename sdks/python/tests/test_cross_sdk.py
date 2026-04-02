@@ -106,6 +106,61 @@ class TestCrossSDKMultiLineError:
         assert len(delta_events) == 0
 
 
+# --- Documented SDK-specific behavior ---
+# These tests document intentional divergences from other SDKs.
+
+
+class TestCrossSDKMalformedDeltaPythonFallback:
+    """Python SDK: malformed JSON in delta → data wrapped as {"message": raw_text}.
+    (Go emits with empty Content, TypeScript throws SSEParseError)
+    """
+
+    def test_malformed_delta_wrapped(self):
+        fixture = (
+            "event: start\ndata: {}\n\n"
+            "event: delta\ndata: {CORRUPT}\n\n"
+            'event: delta\ndata: {"content":"valid"}\n\n'
+            'event: done\ndata: {"node_id":"n-1"}\n\n'
+        )
+        events = parse_fixture(fixture)
+        assert len(events) == 4
+        # Malformed delta is wrapped as {"message": "{CORRUPT}"}
+        assert events[1].event == SSEEventType.DELTA
+        assert events[1].data == {"message": "{CORRUPT}"}
+        assert events[1].content is None  # no "content" key in wrapped data
+        # Valid delta after malformed one still works
+        assert events[2].content == "valid"
+
+    def test_malformed_delta_no_error(self):
+        fixture = (
+            "event: start\ndata: {}\n\n"
+            "event: delta\ndata: not-json\n\n"
+            'event: done\ndata: {"node_id":"n-1"}\n\n'
+        )
+        events = parse_fixture(fixture)
+        # No error events — malformed JSON is silently wrapped
+        error_events = [e for e in events if e.event == SSEEventType.ERROR]
+        assert len(error_events) == 0
+
+
+class TestCrossSDKUnknownEventPythonSkips:
+    """Python SDK: unknown event types are silently skipped.
+    (Go forwards them, TypeScript throws SSEParseError)
+    """
+
+    def test_unknown_event_skipped(self):
+        fixture = (
+            "event: start\ndata: {}\n\n"
+            "event: custom_event\ndata: {}\n\n"
+            'event: done\ndata: {"node_id":"n-1"}\n\n'
+        )
+        events = parse_fixture(fixture)
+        # Only start and done — custom_event is skipped
+        assert len(events) == 2
+        assert events[0].event == SSEEventType.START
+        assert events[1].event == SSEEventType.DONE
+
+
 class TestCrossSDKErrorOnly:
     def test_single_error_event(self):
         events = parse_fixture(FIXTURE_ERROR_ONLY)
