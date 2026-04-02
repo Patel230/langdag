@@ -2,6 +2,7 @@
 
 import json
 
+import httpx
 import pytest
 from pytest_httpx import HTTPXMock
 
@@ -306,3 +307,214 @@ class TestAsyncStreaming:
                 async for _ in client.prompt("Hello", stream=True):
                     pass
             assert exc_info.value.status_code == 502
+
+
+# --- Phase 10: Python SDK Error Handling & SSE Edge Cases (async) ---
+
+
+class TestAsyncStreamWithoutDoneEvent:
+    """10a: SSE stream without done event — async client."""
+
+    async def test_stream_no_done_completes(self, httpx_mock: HTTPXMock):
+        """Stream with start + deltas but no done event should complete
+        iteration without hanging."""
+        sse_body = (
+            "event: start\ndata: {}\n\n"
+            'event: delta\ndata: {"content":"Hello "}\n\n'
+            'event: delta\ndata: {"content":"world!"}\n\n'
+        )
+        httpx_mock.add_response(
+            status_code=200,
+            content=sse_body.encode(),
+            headers={"content-type": "text/event-stream"},
+        )
+        async with AsyncLangDAGClient() as client:
+            events = []
+            async for event in client.prompt("Hello", stream=True):
+                events.append(event)
+        assert len(events) == 3
+        assert events[0].event == SSEEventType.START
+        assert events[1].content == "Hello "
+        assert events[2].content == "world!"
+        assert all(e.node_id is None for e in events)
+
+    async def test_stream_no_done_content_accessible(self, httpx_mock: HTTPXMock):
+        """Content from deltas is accessible even without done event."""
+        sse_body = (
+            "event: start\ndata: {}\n\n"
+            'event: delta\ndata: {"content":"partial "}\n\n'
+            'event: delta\ndata: {"content":"content"}\n\n'
+        )
+        httpx_mock.add_response(
+            status_code=200,
+            content=sse_body.encode(),
+            headers={"content-type": "text/event-stream"},
+        )
+        async with AsyncLangDAGClient() as client:
+            content = ""
+            async for event in client.prompt("Hello", stream=True):
+                if event.content:
+                    content += event.content
+        assert content == "partial content"
+
+
+class TestAsyncProviderErrorMidStream:
+    """10b: Provider error mid-stream — async client."""
+
+    async def test_error_after_deltas(self, httpx_mock: HTTPXMock):
+        """Error event after deltas: all events yielded, content accessible."""
+        sse_body = (
+            "event: start\ndata: {}\n\n"
+            'event: delta\ndata: {"content":"Hello "}\n\n'
+            'event: delta\ndata: {"content":"world"}\n\n'
+            'event: error\ndata: {"message":"provider crashed"}\n\n'
+        )
+        httpx_mock.add_response(
+            status_code=200,
+            content=sse_body.encode(),
+            headers={"content-type": "text/event-stream"},
+        )
+        async with AsyncLangDAGClient() as client:
+            events = []
+            async for event in client.prompt("Hello", stream=True):
+                events.append(event)
+        assert len(events) == 4
+        content = "".join(e.content for e in events if e.content)
+        assert content == "Hello world"
+        assert events[3].event == SSEEventType.ERROR
+        assert events[3].data["message"] == "provider crashed"
+
+    async def test_error_plain_text(self, httpx_mock: HTTPXMock):
+        """Error event with plain text data."""
+        sse_body = (
+            "event: start\ndata: {}\n\n"
+            'event: delta\ndata: {"content":"partial"}\n\n'
+            "event: error\ndata: something went wrong\n\n"
+        )
+        httpx_mock.add_response(
+            status_code=200,
+            content=sse_body.encode(),
+            headers={"content-type": "text/event-stream"},
+        )
+        async with AsyncLangDAGClient() as client:
+            events = []
+            async for event in client.prompt("Hello", stream=True):
+                events.append(event)
+        assert events[2].event == SSEEventType.ERROR
+        assert events[2].data == {"message": "something went wrong"}
+
+
+class TestAsyncConnectionTimeout:
+    """10c: Connection timeout — async client."""
+
+    async def test_connect_timeout(self):
+        """Connecting to unreachable host raises ConnectionError."""
+        async with AsyncLangDAGClient(
+            base_url="http://localhost:1", timeout=0.001
+        ) as client:
+            with pytest.raises(ConnectionError):
+                async for _ in client.prompt("Hello", stream=True):
+                    pass
+
+    async def test_read_timeout(self, httpx_mock: HTTPXMock):
+        """Read timeout during streaming raises httpx.ReadTimeout."""
+        httpx_mock.add_exception(httpx.ReadTimeout("read timed out"))
+        async with AsyncLangDAGClient() as client:
+            with pytest.raises(httpx.ReadTimeout):
+                async for _ in client.prompt("Hello", stream=True):
+                    pass
+
+
+class TestAsyncInvalidSSESequence:
+    """10d: Invalid SSE event sequences — async client."""
+
+    async def test_delta_before_start(self, httpx_mock: HTTPXMock):
+        """Delta before start is yielded without crash."""
+        sse_body = (
+            'event: delta\ndata: {"content":"early"}\n\n'
+            "event: start\ndata: {}\n\n"
+            'event: done\ndata: {"node_id":"n-1"}\n\n'
+        )
+        httpx_mock.add_response(
+            status_code=200,
+            content=sse_body.encode(),
+            headers={"content-type": "text/event-stream"},
+        )
+        async with AsyncLangDAGClient() as client:
+            events = []
+            async for event in client.prompt("Hello", stream=True):
+                events.append(event)
+        assert len(events) == 3
+        assert events[0].event == SSEEventType.DELTA
+        assert events[0].content == "early"
+
+    async def test_done_without_deltas(self, httpx_mock: HTTPXMock):
+        """Done immediately after start (no deltas)."""
+        sse_body = (
+            "event: start\ndata: {}\n\n"
+            'event: done\ndata: {"node_id":"n-empty"}\n\n'
+        )
+        httpx_mock.add_response(
+            status_code=200,
+            content=sse_body.encode(),
+            headers={"content-type": "text/event-stream"},
+        )
+        async with AsyncLangDAGClient() as client:
+            events = []
+            async for event in client.prompt("Hello", stream=True):
+                events.append(event)
+        assert len(events) == 2
+        assert events[1].event == SSEEventType.DONE
+        assert events[1].node_id == "n-empty"
+
+    async def test_multiple_done_events(self, httpx_mock: HTTPXMock):
+        """Multiple done events — all yielded."""
+        sse_body = (
+            "event: start\ndata: {}\n\n"
+            'event: done\ndata: {"node_id":"n-1"}\n\n'
+            'event: done\ndata: {"node_id":"n-2"}\n\n'
+        )
+        httpx_mock.add_response(
+            status_code=200,
+            content=sse_body.encode(),
+            headers={"content-type": "text/event-stream"},
+        )
+        async with AsyncLangDAGClient() as client:
+            events = []
+            async for event in client.prompt("Hello", stream=True):
+                events.append(event)
+        assert len(events) == 3
+        assert events[1].node_id == "n-1"
+        assert events[2].node_id == "n-2"
+
+
+class TestAsyncLargeStreamedResponse:
+    """10e: Large streamed response — async client."""
+
+    async def test_large_stream(self, httpx_mock: HTTPXMock):
+        """10,000 delta events, all content collected correctly."""
+        delta_count = 10_000
+        parts = ["event: start\ndata: {}\n\n"]
+        for i in range(delta_count):
+            parts.append(f'event: delta\ndata: {{"content":"chunk{i} "}}\n\n')
+        parts.append('event: done\ndata: {"node_id":"n-big"}\n\n')
+        sse_body = "".join(parts)
+        httpx_mock.add_response(
+            status_code=200,
+            content=sse_body.encode(),
+            headers={"content-type": "text/event-stream"},
+        )
+        async with AsyncLangDAGClient() as client:
+            content = ""
+            node_id = None
+            event_count = 0
+            async for event in client.prompt("Hello", stream=True):
+                event_count += 1
+                if event.content:
+                    content += event.content
+                if event.node_id:
+                    node_id = event.node_id
+        assert event_count == delta_count + 2
+        assert node_id == "n-big"
+        assert content.startswith("chunk0 ")
+        assert f"chunk{delta_count - 1} " in content

@@ -2,6 +2,7 @@
 
 import json
 
+import httpx
 import pytest
 from pytest_httpx import HTTPXMock
 
@@ -446,3 +447,320 @@ class TestSSEParsingEdgeCases:
         assert events[0].event == SSEEventType.DELTA
         # Non-JSON data should fall back to {"message": ...}
         assert events[0].data == {"message": "not-json-at-all"}
+
+
+# --- Phase 10: Python SDK Error Handling & SSE Edge Cases ---
+
+
+class TestStreamWithoutDoneEvent:
+    """10a: SSE stream without done event — verify iteration completes,
+    content from deltas is accessible, no node_id available."""
+
+    def test_sync_stream_no_done_completes(self, httpx_mock: HTTPXMock):
+        """Stream with start + deltas but no done event should complete
+        iteration without hanging."""
+        sse_body = (
+            "event: start\ndata: {}\n\n"
+            'event: delta\ndata: {"content":"Hello "}\n\n'
+            'event: delta\ndata: {"content":"world!"}\n\n'
+        )
+        httpx_mock.add_response(
+            status_code=200,
+            content=sse_body.encode(),
+            headers={"content-type": "text/event-stream"},
+        )
+        client = LangDAGClient()
+        events = list(client.prompt("Hello", stream=True))
+        assert len(events) == 3  # start + 2 deltas, no done
+        assert events[0].event == SSEEventType.START
+        assert events[1].content == "Hello "
+        assert events[2].content == "world!"
+        # No done event means no node_id from any event
+        assert all(e.node_id is None for e in events)
+
+    def test_sync_stream_no_done_content_accessible(self, httpx_mock: HTTPXMock):
+        """Accumulated content from deltas is fully accessible even without
+        a done event."""
+        sse_body = (
+            "event: start\ndata: {}\n\n"
+            'event: delta\ndata: {"content":"partial "}\n\n'
+            'event: delta\ndata: {"content":"content"}\n\n'
+        )
+        httpx_mock.add_response(
+            status_code=200,
+            content=sse_body.encode(),
+            headers={"content-type": "text/event-stream"},
+        )
+        client = LangDAGClient()
+        content = ""
+        for event in client.prompt("Hello", stream=True):
+            if event.content:
+                content += event.content
+        assert content == "partial content"
+
+    def test_parser_no_done_event(self):
+        """Parser-level: stream ends without done, iteration completes."""
+        lines = iter([
+            "event: start",
+            "data: {}",
+            "",
+            "event: delta",
+            'data: {"content":"abc"}',
+            "",
+        ])
+        events = list(_parse_sse_stream(lines))
+        assert len(events) == 2
+        assert events[1].content == "abc"
+
+
+class TestProviderErrorMidStream:
+    """10b: Provider error mid-stream — error event yielded with message,
+    prior delta content available."""
+
+    def test_sync_error_after_deltas(self, httpx_mock: HTTPXMock):
+        """Server sends start + 2 deltas + error event. All events yielded,
+        prior content accessible."""
+        sse_body = (
+            "event: start\ndata: {}\n\n"
+            'event: delta\ndata: {"content":"Hello "}\n\n'
+            'event: delta\ndata: {"content":"world"}\n\n'
+            'event: error\ndata: {"message":"provider crashed"}\n\n'
+        )
+        httpx_mock.add_response(
+            status_code=200,
+            content=sse_body.encode(),
+            headers={"content-type": "text/event-stream"},
+        )
+        client = LangDAGClient()
+        events = list(client.prompt("Hello", stream=True))
+        assert len(events) == 4
+        # Prior deltas preserved
+        content = "".join(e.content for e in events if e.content)
+        assert content == "Hello world"
+        # Error event has the message
+        assert events[3].event == SSEEventType.ERROR
+        assert events[3].data["message"] == "provider crashed"
+
+    def test_sync_error_plain_text_data(self, httpx_mock: HTTPXMock):
+        """Error event with plain text (not JSON) data should be wrapped
+        in {"message": ...}."""
+        sse_body = (
+            "event: start\ndata: {}\n\n"
+            'event: delta\ndata: {"content":"partial"}\n\n'
+            "event: error\ndata: something went wrong\n\n"
+        )
+        httpx_mock.add_response(
+            status_code=200,
+            content=sse_body.encode(),
+            headers={"content-type": "text/event-stream"},
+        )
+        client = LangDAGClient()
+        events = list(client.prompt("Hello", stream=True))
+        assert events[2].event == SSEEventType.ERROR
+        assert events[2].data == {"message": "something went wrong"}
+
+    def test_parser_error_mid_stream(self):
+        """Parser-level: error event after deltas."""
+        lines = iter([
+            "event: start",
+            "data: {}",
+            "",
+            "event: delta",
+            'data: {"content":"before"}',
+            "",
+            "event: error",
+            'data: {"message":"provider crashed"}',
+            "",
+        ])
+        events = list(_parse_sse_stream(lines))
+        assert len(events) == 3
+        assert events[1].content == "before"
+        assert events[2].event == SSEEventType.ERROR
+        assert events[2].data["message"] == "provider crashed"
+
+
+class TestConnectionTimeout:
+    """10c: Connection timeout during stream — raises ConnectionError or
+    httpx timeout, not an unhandled exception."""
+
+    def test_sync_connect_timeout(self):
+        """Client with very short timeout connecting to unreachable host
+        should raise ConnectionError."""
+        client = LangDAGClient(base_url="http://localhost:1", timeout=0.001)
+        with pytest.raises(ConnectionError):
+            list(client.prompt("Hello", stream=True))
+
+    def test_sync_read_timeout(self, httpx_mock: HTTPXMock):
+        """Read timeout during streaming should raise an exception, not hang.
+        pytest-httpx raises httpx.TimeoutException when no response configured
+        after a real timeout, but we can test that the exception type is sensible
+        by configuring a callback that times out."""
+        # httpx.TimeoutException is a base for read timeouts
+        httpx_mock.add_exception(httpx.ReadTimeout("read timed out"))
+        client = LangDAGClient()
+        with pytest.raises(httpx.ReadTimeout):
+            list(client.prompt("Hello", stream=True))
+
+
+class TestInvalidSSESequence:
+    """10d: Invalid SSE event sequences — delta before start, done without
+    deltas, multiple done events. Verify graceful handling."""
+
+    def test_delta_before_start(self):
+        """Delta events before start should still be yielded — parser
+        doesn't enforce ordering."""
+        lines = iter([
+            "event: delta",
+            'data: {"content":"early"}',
+            "",
+            "event: start",
+            "data: {}",
+            "",
+            "event: done",
+            'data: {"node_id":"n-1"}',
+            "",
+        ])
+        events = list(_parse_sse_stream(lines))
+        assert len(events) == 3
+        assert events[0].event == SSEEventType.DELTA
+        assert events[0].content == "early"
+        assert events[1].event == SSEEventType.START
+        assert events[2].event == SSEEventType.DONE
+
+    def test_done_without_deltas(self):
+        """Done event immediately after start (no deltas) — valid sequence."""
+        lines = iter([
+            "event: start",
+            "data: {}",
+            "",
+            "event: done",
+            'data: {"node_id":"n-empty"}',
+            "",
+        ])
+        events = list(_parse_sse_stream(lines))
+        assert len(events) == 2
+        assert events[1].event == SSEEventType.DONE
+        assert events[1].node_id == "n-empty"
+
+    def test_multiple_done_events(self):
+        """Multiple done events — all yielded, parser doesn't stop at first."""
+        lines = iter([
+            "event: start",
+            "data: {}",
+            "",
+            "event: done",
+            'data: {"node_id":"n-1"}',
+            "",
+            "event: done",
+            'data: {"node_id":"n-2"}',
+            "",
+        ])
+        events = list(_parse_sse_stream(lines))
+        assert len(events) == 3
+        assert events[1].node_id == "n-1"
+        assert events[2].node_id == "n-2"
+
+    def test_empty_data_lines_skipped(self):
+        """Event with event type but no data lines should not yield."""
+        lines = iter([
+            "event: delta",
+            "",
+            "event: done",
+            'data: {"node_id":"n-1"}',
+            "",
+        ])
+        events = list(_parse_sse_stream(lines))
+        # First event has no data lines, so it's skipped
+        assert len(events) == 1
+        assert events[0].event == SSEEventType.DONE
+
+    def test_data_without_event_type_skipped(self):
+        """Data lines without a preceding event type should not yield."""
+        lines = iter([
+            "data: {}",
+            "",
+            "event: start",
+            "data: {}",
+            "",
+        ])
+        events = list(_parse_sse_stream(lines))
+        # First block has no event type, so it's skipped
+        assert len(events) == 1
+        assert events[0].event == SSEEventType.START
+
+    def test_sync_stream_delta_before_start(self, httpx_mock: HTTPXMock):
+        """Full client: delta before start is yielded without crash."""
+        sse_body = (
+            'event: delta\ndata: {"content":"early"}\n\n'
+            "event: start\ndata: {}\n\n"
+            'event: done\ndata: {"node_id":"n-1"}\n\n'
+        )
+        httpx_mock.add_response(
+            status_code=200,
+            content=sse_body.encode(),
+            headers={"content-type": "text/event-stream"},
+        )
+        client = LangDAGClient()
+        events = list(client.prompt("Hello", stream=True))
+        assert len(events) == 3
+        assert events[0].event == SSEEventType.DELTA
+        assert events[0].content == "early"
+
+
+class TestLargeStreamedResponse:
+    """10e: Large streamed response — 10,000 delta events, all content
+    collected correctly, iteration completes."""
+
+    def test_sync_large_stream(self, httpx_mock: HTTPXMock):
+        """10,000 delta events should all be yielded with correct content."""
+        delta_count = 10_000
+        parts = ["event: start\ndata: {}\n\n"]
+        for i in range(delta_count):
+            parts.append(f'event: delta\ndata: {{"content":"chunk{i} "}}\n\n')
+        parts.append('event: done\ndata: {"node_id":"n-big"}\n\n')
+        sse_body = "".join(parts)
+        httpx_mock.add_response(
+            status_code=200,
+            content=sse_body.encode(),
+            headers={"content-type": "text/event-stream"},
+        )
+        client = LangDAGClient()
+        content = ""
+        node_id = None
+        event_count = 0
+        for event in client.prompt("Hello", stream=True):
+            event_count += 1
+            if event.content:
+                content += event.content
+            if event.node_id:
+                node_id = event.node_id
+        # start + 10000 deltas + done = 10002
+        assert event_count == delta_count + 2
+        assert node_id == "n-big"
+        # Verify first and last chunks present
+        assert content.startswith("chunk0 ")
+        assert f"chunk{delta_count - 1} " in content
+
+    def test_parser_large_stream(self):
+        """Parser-level: 10,000 deltas with lazy iteration (generator)."""
+        delta_count = 10_000
+
+        def gen_lines():
+            yield "event: start"
+            yield "data: {}"
+            yield ""
+            for i in range(delta_count):
+                yield "event: delta"
+                yield f'{{"content":"c{i}"}}'[0:0] + f'data: {{"content":"c{i}"}}'
+                yield ""
+            yield "event: done"
+            yield 'data: {"node_id":"n-1"}'
+            yield ""
+
+        content_parts = []
+        for event in _parse_sse_stream(gen_lines()):
+            if event.content:
+                content_parts.append(event.content)
+        assert len(content_parts) == delta_count
+        assert content_parts[0] == "c0"
+        assert content_parts[-1] == f"c{delta_count - 1}"
