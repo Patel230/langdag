@@ -337,6 +337,69 @@ describe('parseSSEStream', () => {
     }
   });
 
+  // --- 11d: Fetch failure during streaming ---
+
+  it('reader error mid-stream propagates through parser', async () => {
+    const encoder = new TextEncoder();
+    let enqueueCount = 0;
+
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        // Send some valid data first
+        controller.enqueue(encoder.encode('event: start\ndata: {}\n\n'));
+        controller.enqueue(encoder.encode('event: delta\ndata: {"content":"before "}\n\n'));
+      },
+      pull(controller) {
+        enqueueCount++;
+        if (enqueueCount === 1) {
+          controller.enqueue(encoder.encode('event: delta\ndata: {"content":"drop"}\n\n'));
+        } else {
+          // Simulate network failure
+          controller.error(new Error('network connection lost'));
+        }
+      },
+    });
+
+    const events: SSEEvent[] = [];
+    let caughtError: Error | null = null;
+    try {
+      for await (const event of parseSSEStream(stream)) {
+        events.push(event);
+      }
+    } catch (err) {
+      caughtError = err as Error;
+    }
+
+    // Events received before the error
+    expect(events.length).toBeGreaterThanOrEqual(2); // at least start + first delta
+    expect(events[0].type).toBe('start');
+    // Error propagated
+    expect(caughtError).not.toBeNull();
+    expect(caughtError!.message).toBe('network connection lost');
+  });
+
+  it('reader error on first read propagates', async () => {
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.error(new Error('connection refused'));
+      },
+    });
+
+    const events: SSEEvent[] = [];
+    let caughtError: Error | null = null;
+    try {
+      for await (const event of parseSSEStream(stream)) {
+        events.push(event);
+      }
+    } catch (err) {
+      caughtError = err as Error;
+    }
+
+    expect(events).toHaveLength(0);
+    expect(caughtError).not.toBeNull();
+    expect(caughtError!.message).toBe('connection refused');
+  });
+
   it('handles empty content deltas', async () => {
     const text = [
       'event: delta',

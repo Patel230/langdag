@@ -579,6 +579,75 @@ describe('LangDAGClient', () => {
       expect(node.content).toBe('full response');
     });
 
+    // --- 11d: Fetch failure during streaming ---
+
+    it('reader error mid-stream: events() throws, content preserved', async () => {
+      const encoder = new TextEncoder();
+      let pullCount = 0;
+
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(encoder.encode('event: start\ndata: {}\n\n'));
+          controller.enqueue(encoder.encode('event: delta\ndata: {"content":"before drop"}\n\n'));
+        },
+        pull(controller) {
+          pullCount++;
+          if (pullCount >= 1) {
+            controller.error(new Error('network lost'));
+          }
+        },
+      });
+
+      const fetchFn = mockFetch({ body });
+      const client = new LangDAGClient({ fetch: fetchFn });
+      const stream = await client.promptStream('Hello');
+
+      const events = [];
+      let caughtError: Error | null = null;
+      try {
+        for await (const event of stream.events()) {
+          events.push(event);
+        }
+      } catch (err) {
+        caughtError = err as Error;
+      }
+
+      // Events received before the error
+      expect(events.length).toBeGreaterThanOrEqual(2);
+      // Error propagated from reader
+      expect(caughtError).not.toBeNull();
+      expect(caughtError!.message).toBe('network lost');
+      // Content accumulated before the error
+      expect(stream.content).toBe('before drop');
+    });
+
+    it('reader error: node() rejects, content preserved', async () => {
+      const encoder = new TextEncoder();
+      let pullCount = 0;
+
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(encoder.encode('event: start\ndata: {}\n\n'));
+          controller.enqueue(encoder.encode('event: delta\ndata: {"content":"saved"}\n\n'));
+        },
+        pull(controller) {
+          pullCount++;
+          if (pullCount >= 1) {
+            controller.error(new Error('connection reset'));
+          }
+        },
+      });
+
+      const fetchFn = mockFetch({ body });
+      const client = new LangDAGClient({ fetch: fetchFn });
+      const stream = await client.promptStream('Hello');
+
+      // node() auto-consumes — should reject with the reader error
+      await expect(stream.node()).rejects.toThrow('connection reset');
+      // Content accumulated before the error
+      expect(stream.content).toBe('saved');
+    });
+
     it('stream with empty content deltas collects correctly', async () => {
       const sseText = [
         'event: start',
