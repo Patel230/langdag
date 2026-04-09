@@ -45,7 +45,7 @@ type Config struct {
 	StoragePath string
 
 	// Provider is the default LLM provider to use.
-	// Valid values: "anthropic", "openai", "gemini", "grok", "ollama",
+	// Valid values: "anthropic", "openai", "gemini", "grok", "openrouter", "ollama",
 	// "anthropic-vertex", "anthropic-bedrock", "openai-azure", "gemini-vertex"
 	// Defaults to "anthropic"
 	Provider string
@@ -65,6 +65,9 @@ type Config struct {
 
 	// GrokConfig holds Grok (xAI)-specific config.
 	GrokConfig *GrokConfig
+
+	// OpenRouterConfig holds OpenRouter-specific config.
+	OpenRouterConfig *OpenRouterConfig
 
 	// AzureOpenAIConfig holds Azure OpenAI-specific config.
 	AzureOpenAIConfig *AzureOpenAIConfig
@@ -130,6 +133,11 @@ type OllamaConfig struct {
 
 // GrokConfig holds Grok (xAI)-specific configuration.
 type GrokConfig struct {
+	BaseURL string
+}
+
+// OpenRouterConfig holds OpenRouter-specific configuration.
+type OpenRouterConfig struct {
 	BaseURL string
 }
 
@@ -617,6 +625,23 @@ func createSingleProvider(ctx context.Context, name string, cfg Config) (interna
 			baseURL = os.Getenv("XAI_BASE_URL")
 		}
 		return openaiprovider.NewGrok(apiKey, baseURL), nil
+
+	case "openrouter":
+		apiKey := cfg.APIKeys["openrouter"]
+		if apiKey == "" {
+			apiKey = os.Getenv("OPENROUTER_API_KEY")
+		}
+		if apiKey == "" {
+			return nil, fmt.Errorf("langdag: OPENROUTER_API_KEY not set")
+		}
+		baseURL := ""
+		if cfg.OpenRouterConfig != nil {
+			baseURL = cfg.OpenRouterConfig.BaseURL
+		}
+		if baseURL == "" {
+			baseURL = os.Getenv("OPENROUTER_BASE_URL")
+		}
+		return openaiprovider.NewOpenRouter(apiKey, baseURL), nil
 
 	case "gemini-vertex":
 		vc := cfg.VertexConfig
