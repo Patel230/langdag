@@ -39,6 +39,7 @@ type content struct {
 
 type part struct {
 	Text             string            `json:"text,omitempty"`
+	Thought          bool              `json:"thought,omitempty"`
 	InlineData       *inlineData       `json:"inlineData,omitempty"`
 	FileData         *fileData         `json:"fileData,omitempty"`
 	FunctionCall     *functionCall     `json:"functionCall,omitempty"`
@@ -289,6 +290,9 @@ func convertResponse(resp *gemmaResponse) *types.CompletionResponse {
 		cr.StopReason = strings.ToLower(cand.FinishReason)
 
 		for _, p := range cand.Content.Parts {
+			if p.Thought {
+				continue
+			}
 			if p.Text != "" {
 				cr.Content = append(cr.Content, types.ContentBlock{
 					Type: "text",
@@ -361,6 +365,9 @@ func parseSSEStream(body io.Reader, events chan<- types.StreamEvent) {
 
 		var currentText string
 		for _, p := range cand.Content.Parts {
+			if p.Thought {
+				continue
+			}
 			if p.Text != "" {
 				currentText += p.Text
 			}
@@ -376,6 +383,9 @@ func parseSSEStream(body io.Reader, events chan<- types.StreamEvent) {
 		}
 
 		for _, p := range cand.Content.Parts {
+			if p.Thought {
+				continue
+			}
 			if p.FunctionCall != nil {
 				args, _ := json.Marshal(p.FunctionCall.Args)
 				block := types.ContentBlock{
