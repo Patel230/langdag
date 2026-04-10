@@ -41,11 +41,12 @@ func (p *Provider) Name() string {
 func (p *Provider) Models() []types.ModelInfo {
 	st := []string{types.ServerToolWebSearch}
 	return []types.ModelInfo{
-		{ID: "gemma-4", Name: "Gemma 4", ContextWindow: 1048576, MaxOutput: 8192, ServerTools: st},
-		{ID: "gemma-3-27b", Name: "Gemma 3 27B", ContextWindow: 131072, MaxOutput: 8192, ServerTools: st},
-		{ID: "gemma-3-12b", Name: "Gemma 3 12B", ContextWindow: 131072, MaxOutput: 8192, ServerTools: st},
-		{ID: "gemma-3-4b", Name: "Gemma 3 4B", ContextWindow: 131072, MaxOutput: 8192, ServerTools: st},
-		{ID: "gemma-3-1b", Name: "Gemma 3 1B", ContextWindow: 32768, MaxOutput: 8192, ServerTools: st},
+		{ID: "gemma-4-31b-it", Name: "Gemma 4 31B", ContextWindow: 262144, MaxOutput: 8192, ServerTools: st},
+		{ID: "gemma-4-26b-a4b-it", Name: "Gemma 4 26B MoE", ContextWindow: 262144, MaxOutput: 8192, ServerTools: st},
+		{ID: "gemma-3-27b-it", Name: "Gemma 3 27B", ContextWindow: 131072, MaxOutput: 8192, ServerTools: st},
+		{ID: "gemma-3-12b-it", Name: "Gemma 3 12B", ContextWindow: 131072, MaxOutput: 8192, ServerTools: st},
+		{ID: "gemma-3-4b-it", Name: "Gemma 3 4B", ContextWindow: 131072, MaxOutput: 8192, ServerTools: st},
+		{ID: "gemma-3-1b-it", Name: "Gemma 3 1B", ContextWindow: 32768, MaxOutput: 8192, ServerTools: st},
 	}
 }
 

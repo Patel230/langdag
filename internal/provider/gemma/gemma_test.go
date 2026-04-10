@@ -23,11 +23,12 @@ func TestProviderModels(t *testing.T) {
 	}
 
 	want := map[string]bool{
-		"gemma-4":     false,
-		"gemma-3-27b": false,
-		"gemma-3-12b": false,
-		"gemma-3-4b":  false,
-		"gemma-3-1b":  false,
+		"gemma-4-31b-it":     false,
+		"gemma-4-26b-a4b-it": false,
+		"gemma-3-27b-it":     false,
+		"gemma-3-12b-it":     false,
+		"gemma-3-4b-it":      false,
+		"gemma-3-1b-it":      false,
 	}
 	for _, m := range models {
 		if _, ok := want[m.ID]; ok {
