@@ -24,7 +24,12 @@ type gemmaRequest struct {
 	Contents          []content         `json:"contents"`
 	SystemInstruction *content          `json:"system_instruction,omitempty"`
 	Tools             []gemmaTool       `json:"tools,omitempty"`
+	ToolConfig        *toolConfig       `json:"tool_config,omitempty"`
 	GenerationConfig  *generationConfig `json:"generation_config,omitempty"`
+}
+
+type toolConfig struct {
+	IncludeServerSideToolInvocations bool `json:"include_server_side_tool_invocations,omitempty"`
 }
 
 type content struct {
@@ -132,6 +137,14 @@ func buildRequest(req *types.CompletionRequest) []byte {
 
 	if len(req.Tools) > 0 {
 		gr.Tools = convertTools(req.Tools)
+		// When server-side tools (e.g. google_search) are mixed with function
+		// calling, the API requires this flag.
+		for _, t := range req.Tools {
+			if !t.IsClientTool() {
+				gr.ToolConfig = &toolConfig{IncludeServerSideToolInvocations: true}
+				break
+			}
+		}
 	}
 
 	gc := &generationConfig{}
