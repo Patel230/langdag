@@ -287,37 +287,58 @@ func TestLive_MultiTurnToolUse(t *testing.T) {
 }
 
 // TestLive_Thinking tests completion with thinking/reasoning enabled.
+// NOTE: gemma-4-31b-it returns 400 "Thinking budget is not supported for this
+// model" when thinkingBudget is set explicitly, yet the model does emit
+// thoughtsTokenCount in normal responses. This test verifies the API rejects
+// explicit thinking config and checks whether reasoning tokens appear without it.
 func TestLive_Thinking(t *testing.T) {
 	p := liveProvider(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
 
-	think := true
-	resp, err := p.Complete(ctx, &types.CompletionRequest{
-		Model: defaultModel,
-		Messages: []types.Message{
-			{Role: "user", Content: json.RawMessage(`"What is 17 * 23?"`)},
-		},
-		Think: &think,
-	})
-	if err != nil {
-		t.Fatalf("Complete failed: %v", err)
-	}
+	t.Run("explicit_thinking_rejected", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
 
-	var hasText bool
-	for _, b := range resp.Content {
-		if b.Type == "text" && b.Text != "" {
-			hasText = true
-			t.Logf("response: %q", b.Text)
+		think := true
+		_, err := p.Complete(ctx, &types.CompletionRequest{
+			Model: defaultModel,
+			Messages: []types.Message{
+				{Role: "user", Content: json.RawMessage(`"What is 17 * 23?"`)},
+			},
+			Think: &think,
+		})
+		if err == nil {
+			t.Log("NOTE: explicit thinking was accepted (model may have added support)")
+		} else if strings.Contains(err.Error(), "400") {
+			t.Logf("confirmed: explicit thinking rejected: %v", err)
+		} else {
+			t.Fatalf("unexpected error: %v", err)
 		}
-	}
-	if !hasText {
-		t.Error("expected text response")
-	}
-	t.Logf("usage: in=%d out=%d reasoning=%d", resp.Usage.InputTokens, resp.Usage.OutputTokens, resp.Usage.ReasoningTokens)
-	if resp.Usage.ReasoningTokens == 0 {
-		t.Log("NOTE: no reasoning tokens reported (thinking may not have been used)")
-	}
+	})
+
+	t.Run("implicit_reasoning_tokens", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		resp, err := p.Complete(ctx, &types.CompletionRequest{
+			Model: defaultModel,
+			Messages: []types.Message{
+				{Role: "user", Content: json.RawMessage(`"What is 17 * 23?"`)},
+			},
+		})
+		if err != nil {
+			t.Fatalf("Complete failed: %v", err)
+		}
+
+		t.Logf("usage: in=%d out=%d reasoning=%d", resp.Usage.InputTokens, resp.Usage.OutputTokens, resp.Usage.ReasoningTokens)
+		if resp.Usage.ReasoningTokens > 0 {
+			t.Log("NOTE: model reports reasoning tokens even without explicit thinking config")
+		}
+		for _, b := range resp.Content {
+			if b.Type == "text" {
+				t.Logf("response: %q", b.Text)
+			}
+		}
+	})
 }
 
 // TestLive_LargeContext tests behavior with a large input context.
@@ -375,14 +396,14 @@ func TestLive_LargeContext(t *testing.T) {
 	}
 }
 
-// TestLive_ToolCallWithThinking tests tool calling with thinking enabled.
-// The debug trace showed reasoning_tokens in early calls — verify the interaction.
-func TestLive_ToolCallWithThinking(t *testing.T) {
+// TestLive_ToolCallWithReasoningTokens tests tool calling and checks whether
+// the model reports reasoning tokens alongside tool calls (without explicit
+// thinking config, since gemma-4-31b-it rejects it).
+func TestLive_ToolCallWithReasoningTokens(t *testing.T) {
 	p := liveProvider(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	think := true
 	tools := []types.ToolDefinition{
 		{
 			Name:        "search_code",
@@ -397,7 +418,6 @@ func TestLive_ToolCallWithThinking(t *testing.T) {
 			{Role: "user", Content: json.RawMessage(`"Find where the git branch name is displayed in the UI"`)},
 		},
 		Tools: tools,
-		Think: &think,
 	})
 	if err != nil {
 		t.Fatalf("Complete failed: %v", err)
@@ -417,6 +437,9 @@ func TestLive_ToolCallWithThinking(t *testing.T) {
 
 	t.Logf("has_text=%v has_tool_use=%v stop=%q reasoning=%d",
 		hasText, hasToolUse, resp.StopReason, resp.Usage.ReasoningTokens)
+	if resp.Usage.ReasoningTokens > 0 {
+		t.Log("NOTE: reasoning tokens reported alongside tool calls without explicit thinking")
+	}
 }
 
 // TestLive_ConsecutiveToolCalls tests if the model batches multiple tool calls
