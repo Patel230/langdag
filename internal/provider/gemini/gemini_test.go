@@ -279,6 +279,40 @@ data: {"candidates":[{"content":{"parts":[{"text":"Hello world!"}]},"finishReaso
 	if last.Response.Usage.InputTokens != 10 {
 		t.Errorf("expected InputTokens=10, got %d", last.Response.Usage.InputTokens)
 	}
+	if last.Response.StopReason != "stop" {
+		t.Errorf("expected StopReason='stop', got %q", last.Response.StopReason)
+	}
+}
+
+func TestParseSSEStream_MaxTokensFinishReason(t *testing.T) {
+	// When the model hits max_tokens, the finishReason should be captured
+	// so downstream continuation logic can detect the truncation.
+	sseData := `data: {"candidates":[{"content":{"parts":[{"text":"Hello! How can I help you with your"}]},"finishReason":"MAX_TOKENS"}],"usageMetadata":{"promptTokenCount":100,"candidatesTokenCount":12,"thoughtsTokenCount":28}}
+
+`
+
+	events := make(chan types.StreamEvent, 20)
+	go func() {
+		defer close(events)
+		parseSSEStream(strings.NewReader(sseData), events)
+	}()
+
+	var doneResp *types.CompletionResponse
+	for ev := range events {
+		if ev.Type == types.StreamEventDone {
+			doneResp = ev.Response
+		}
+	}
+
+	if doneResp == nil {
+		t.Fatal("expected done response")
+	}
+	if doneResp.StopReason != "max_tokens" {
+		t.Errorf("StopReason = %q, want %q", doneResp.StopReason, "max_tokens")
+	}
+	if len(doneResp.Content) != 1 || doneResp.Content[0].Text != "Hello! How can I help you with your" {
+		t.Errorf("unexpected content: %+v", doneResp.Content)
+	}
 }
 
 func TestParseSSEStream_CacheTokens(t *testing.T) {

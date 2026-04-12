@@ -424,6 +424,7 @@ func parseSSEStream(body io.Reader, events chan<- types.StreamEvent) {
 	var prevText string
 	var lastUsage *types.Usage
 	var toolUseBlocks []types.ContentBlock
+	var finishReason string
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -448,6 +449,10 @@ func parseSSEStream(body io.Reader, events chan<- types.StreamEvent) {
 		}
 
 		cand := resp.Candidates[0]
+
+		if cand.FinishReason != "" {
+			finishReason = cand.FinishReason
+		}
 
 		var currentText string
 		for _, p := range cand.Content.Parts {
@@ -497,7 +502,9 @@ func parseSSEStream(body io.Reader, events chan<- types.StreamEvent) {
 		}
 	}
 
-	resp := &types.CompletionResponse{}
+	resp := &types.CompletionResponse{
+		StopReason: strings.ToLower(finishReason),
+	}
 	if lastUsage != nil {
 		resp.Usage = *lastUsage
 	}
