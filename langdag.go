@@ -590,12 +590,6 @@ func createSingleProvider(ctx context.Context, name string, cfg Config) (interna
 			apiKey = os.Getenv("GEMINI_API_KEY")
 		}
 		if apiKey == "" {
-			apiKey = cfg.APIKeys["gemma"]
-		}
-		if apiKey == "" {
-			apiKey = os.Getenv("GEMMA_API_KEY")
-		}
-		if apiKey == "" {
 			return nil, fmt.Errorf("langdag: GEMINI_API_KEY not set")
 		}
 		return geminiprovider.New(apiKey), nil

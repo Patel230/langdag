@@ -244,26 +244,8 @@ var providerRegistry = map[string]providerFactory{
 	"ollama": func(_ context.Context, c *config.Config) (provider.Provider, error) {
 		return openaiprovider.NewOllama(c.Providers.Ollama.BaseURL), nil
 	},
-	"gemini": func(_ context.Context, c *config.Config) (provider.Provider, error) {
-		apiKey := c.Providers.Gemini.APIKey
-		if apiKey == "" {
-			apiKey = c.Providers.Gemma.APIKey
-		}
-		if apiKey == "" {
-			return nil, fmt.Errorf("GEMINI_API_KEY not set")
-		}
-		return geminiprovider.New(apiKey), nil
-	},
-	"gemma": func(_ context.Context, c *config.Config) (provider.Provider, error) {
-		apiKey := c.Providers.Gemini.APIKey
-		if apiKey == "" {
-			apiKey = c.Providers.Gemma.APIKey
-		}
-		if apiKey == "" {
-			return nil, fmt.Errorf("GEMINI_API_KEY not set")
-		}
-		return geminiprovider.New(apiKey), nil
-	},
+	"gemini": newGeminiProvider,
+	"gemma":  newGeminiProvider,
 	"gemini-vertex": func(ctx context.Context, c *config.Config) (provider.Provider, error) {
 		vc := c.Providers.GeminiVertex
 		if vc.ProjectID == "" || vc.Region == "" {
@@ -296,6 +278,14 @@ var providerRegistry = map[string]providerFactory{
 		}
 		return mockprovider.New(cfg), nil
 	},
+}
+
+// newGeminiProvider creates a Gemini provider using Google AI Studio credentials.
+func newGeminiProvider(_ context.Context, c *config.Config) (provider.Provider, error) {
+	if c.Providers.Gemini.APIKey == "" {
+		return nil, fmt.Errorf("GEMINI_API_KEY not set")
+	}
+	return geminiprovider.New(c.Providers.Gemini.APIKey), nil
 }
 
 // createProvider creates the LLM provider based on configuration.
