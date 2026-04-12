@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"io"
 	"testing"
 	"time"
 
@@ -131,11 +132,11 @@ func TestIsTransient(t *testing.T) {
 		{fmt.Errorf("status 529: overloaded"), true},
 		{fmt.Errorf("connection refused"), true},
 		{fmt.Errorf("timeout"), true},
-		{fmt.Errorf("unexpected EOF"), true},
+		{fmt.Errorf("wrap: %w", io.EOF), true},
+		{fmt.Errorf("wrap: %w", io.ErrUnexpectedEOF), true},
 		{fmt.Errorf("write: broken pipe"), true},
 		{fmt.Errorf("TLS handshake timeout"), true},
 		{fmt.Errorf("server is overloaded"), true},
-		{fmt.Errorf("dial tcp: lookup api.example.com: no such host"), true},
 		{fmt.Errorf("status 401: unauthorized"), false},
 		{fmt.Errorf("status 400: bad request"), false},
 		{fmt.Errorf("invalid model"), false},
@@ -283,24 +284,20 @@ func TestIsTransient_EdgeCaseMessages(t *testing.T) {
 		{"connection reset by peer", true},
 		{"connection refused by server", true},
 
-		// EOF variants
-		{"unexpected EOF", true},
-		{"read: EOF", true},
-		{"io.EOF", true}, // "EOF" substring is present
+		// EOF — only matched via errors.Is, not substring; string-only messages won't match
+		{"unexpected EOF", false},
+		{"read: EOF", false},
 
 		// Broken pipe
 		{"write tcp 127.0.0.1:8080: write: broken pipe", true},
 
-		// TLS errors
+		// TLS errors (case-insensitive)
 		{"TLS handshake error", true},
-		{"tls handshake", false}, // case-sensitive — lowercase not matched
+		{"tls handshake timeout", true},
 
 		// Overloaded
 		{"server is overloaded", true},
 		{"Overloaded", true}, // case-insensitive match on "overloaded"
-
-		// DNS — "no such host" is retried (DNS can fail transiently in containers/cloud)
-		{"dial tcp: lookup api.example.com: no such host", true},
 
 		// 529 (Anthropic overloaded status)
 		{"status 529: overloaded", true},

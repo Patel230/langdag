@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"math"
 	"math/rand"
@@ -200,10 +201,13 @@ func isTransient(err error) bool {
 		strings.Contains(msg, "connection reset") ||
 		strings.Contains(msg, "timeout") ||
 		strings.Contains(msg, "temporary failure") ||
-		strings.Contains(msg, "EOF") ||
 		strings.Contains(msg, "broken pipe") ||
-		strings.Contains(msg, "TLS handshake") ||
-		strings.Contains(msg, "no such host") {
+		strings.Contains(lower, "tls handshake") {
+		return true
+	}
+
+	// IO errors (connection closed mid-stream)
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
 		return true
 	}
 
