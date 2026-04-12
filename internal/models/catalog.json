@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-03-10T16:41:21.729445Z",
+  "updated_at": "2026-04-12T06:59:35.867504Z",
   "source": "providers",
   "providers": {
     "anthropic": [
@@ -27,7 +27,7 @@
         "id": "claude-opus-4-6",
         "input_price_per_1m": 5,
         "output_price_per_1m": 25,
-        "context_window": 200000,
+        "context_window": 1000000,
         "max_output": 128000,
         "server_tools": [
           "web_search"
@@ -37,7 +37,7 @@
         "id": "claude-sonnet-4-6",
         "input_price_per_1m": 3,
         "output_price_per_1m": 15,
-        "context_window": 200000,
+        "context_window": 1000000,
         "max_output": 64000,
         "server_tools": [
           "web_search"
@@ -78,30 +78,20 @@
     ],
     "gemma": [
       {
-        "id": "gemma-3-1b-it",
-        "input_price_per_1m": 0.005,
-        "output_price_per_1m": 0.015,
-        "context_window": 32768,
-        "max_output": 8192,
-        "server_tools": [
-          "web_search"
-        ]
-      },
-      {
-        "id": "gemma-3-4b-it",
-        "input_price_per_1m": 0.01,
-        "output_price_per_1m": 0.03,
-        "context_window": 131072,
-        "max_output": 8192,
-        "server_tools": [
-          "web_search"
-        ]
-      },
-      {
         "id": "gemma-3-12b-it",
         "input_price_per_1m": 0.025,
         "output_price_per_1m": 0.075,
         "context_window": 131072,
+        "max_output": 8192,
+        "server_tools": [
+          "web_search"
+        ]
+      },
+      {
+        "id": "gemma-3-1b-it",
+        "input_price_per_1m": 0.005,
+        "output_price_per_1m": 0.015,
+        "context_window": 32768,
         "max_output": 8192,
         "server_tools": [
           "web_search"
@@ -118,7 +108,17 @@
         ]
       },
       {
-        "id": "gemma-4-31b-it",
+        "id": "gemma-3-4b-it",
+        "input_price_per_1m": 0.01,
+        "output_price_per_1m": 0.03,
+        "context_window": 131072,
+        "max_output": 8192,
+        "server_tools": [
+          "web_search"
+        ]
+      },
+      {
+        "id": "gemma-4-26b-a4b-it",
         "input_price_per_1m": 0.05,
         "output_price_per_1m": 0.15,
         "context_window": 262144,
@@ -128,7 +128,7 @@
         ]
       },
       {
-        "id": "gemma-4-26b-a4b-it",
+        "id": "gemma-4-31b-it",
         "input_price_per_1m": 0.05,
         "output_price_per_1m": 0.15,
         "context_window": 262144,
@@ -203,6 +203,36 @@
         "id": "grok-4-fast-reasoning",
         "input_price_per_1m": 0.2,
         "output_price_per_1m": 0.5,
+        "context_window": 2000000,
+        "max_output": 0,
+        "server_tools": [
+          "web_search"
+        ]
+      },
+      {
+        "id": "grok-4.20-0309-non-reasoning",
+        "input_price_per_1m": 2,
+        "output_price_per_1m": 6,
+        "context_window": 2000000,
+        "max_output": 0,
+        "server_tools": [
+          "web_search"
+        ]
+      },
+      {
+        "id": "grok-4.20-0309-reasoning",
+        "input_price_per_1m": 2,
+        "output_price_per_1m": 6,
+        "context_window": 2000000,
+        "max_output": 0,
+        "server_tools": [
+          "web_search"
+        ]
+      },
+      {
+        "id": "grok-4.20-multi-agent-0309",
+        "input_price_per_1m": 2,
+        "output_price_per_1m": 6,
         "context_window": 2000000,
         "max_output": 0,
         "server_tools": [
