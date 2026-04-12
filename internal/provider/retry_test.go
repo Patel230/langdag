@@ -277,8 +277,8 @@ func TestIsTransient_EdgeCaseMessages(t *testing.T) {
 		{"HTTP 504 Gateway Timeout", true},
 
 		// Numbers that look like status codes but aren't
-		{"invoice #50032 not found", true}, // false positive: contains "500"
-		{"port 5003 is busy", true},         // false positive: contains "500"
+		{"invoice #50032 not found", false}, // "500" embedded in "50032" — not a status code
+		{"port 5003 is busy", false},         // "500" embedded in "5003" — not a status code
 
 		// Connection errors
 		{"connection reset by peer", true},
@@ -295,9 +295,10 @@ func TestIsTransient_EdgeCaseMessages(t *testing.T) {
 		{"TLS handshake error", true},
 		{"tls handshake timeout", true},
 
-		// Overloaded
+		// Overloaded — suffix match to avoid unrelated usage
 		{"server is overloaded", true},
-		{"Overloaded", true}, // case-insensitive match on "overloaded"
+		{"Overloaded", true},
+		{"circuit overloaded in module X", false}, // not a server capacity error
 
 		// 529 (Anthropic overloaded status)
 		{"status 529: overloaded", true},
@@ -307,6 +308,23 @@ func TestIsTransient_EdgeCaseMessages(t *testing.T) {
 		got := isTransient(fmt.Errorf("%s", tt.msg))
 		if got != tt.transient {
 			t.Errorf("isTransient(%q) = %v, want %v", tt.msg, got, tt.transient)
+		}
+	}
+
+	// Wrapped io.EOF / io.ErrUnexpectedEOF — matched via errors.Is, not substring.
+	// These complement the string-only "unexpected EOF" / "read: EOF" cases above.
+	wrappedEOFTests := []struct {
+		err       error
+		transient bool
+	}{
+		{fmt.Errorf("connection closed: %w", io.EOF), true},
+		{fmt.Errorf("read body: %w", io.ErrUnexpectedEOF), true},
+		{fmt.Errorf("outer: %w", fmt.Errorf("inner: %w", io.EOF)), true},
+	}
+	for _, tt := range wrappedEOFTests {
+		got := isTransient(tt.err)
+		if got != tt.transient {
+			t.Errorf("isTransient(%v) = %v, want %v", tt.err, got, tt.transient)
 		}
 	}
 }
