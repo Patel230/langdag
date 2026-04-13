@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"io"
 	"testing"
 	"time"
 
@@ -128,8 +129,14 @@ func TestIsTransient(t *testing.T) {
 		{fmt.Errorf("status 502: bad gateway"), true},
 		{fmt.Errorf("status 503: service unavailable"), true},
 		{fmt.Errorf("status 429: rate limit exceeded"), true},
+		{fmt.Errorf("status 529: overloaded"), true},
 		{fmt.Errorf("connection refused"), true},
 		{fmt.Errorf("timeout"), true},
+		{fmt.Errorf("wrap: %w", io.EOF), true},
+		{fmt.Errorf("wrap: %w", io.ErrUnexpectedEOF), true},
+		{fmt.Errorf("write: broken pipe"), true},
+		{fmt.Errorf("TLS handshake timeout"), true},
+		{fmt.Errorf("server is overloaded"), true},
 		{fmt.Errorf("status 401: unauthorized"), false},
 		{fmt.Errorf("status 400: bad request"), false},
 		{fmt.Errorf("invalid model"), false},
@@ -256,13 +263,14 @@ func TestIsTransient_EdgeCaseMessages(t *testing.T) {
 	}{
 		// Variants of timeout phrasing
 		{"connection timeout", true},        // contains "timeout"
+		{"Connection Timeout", true},        // case-insensitive
 		{"request timed out", false},         // "timed out" does NOT contain "timeout"
 		{"context deadline exceeded", false}, // Go stdlib timeout message — not matched by string
 		{"temporary failure in name resolution", true}, // contains "temporary failure"
 
 		// Rate limit variants
 		{"rate limit exceeded", true},
-		{"Rate Limit Exceeded", false}, // case-sensitive — "rate limit" not matched
+		{"Rate Limit Exceeded", true}, // case-insensitive match on "rate limit"
 		{"you have been rate limited", true},
 
 		// 5xx in unusual positions
@@ -270,18 +278,57 @@ func TestIsTransient_EdgeCaseMessages(t *testing.T) {
 		{"HTTP 504 Gateway Timeout", true},
 
 		// Numbers that look like status codes but aren't
-		{"invoice #50032 not found", true}, // false positive: contains "500"
-		{"port 5003 is busy", true},         // false positive: contains "500"
+		{"invoice #50032 not found", false}, // "500" embedded in "50032" — not a status code
+		{"port 5003 is busy", false},         // "500" embedded in "5003" — not a status code
 
-		// Connection errors
+		// Connection errors (case-insensitive)
 		{"connection reset by peer", true},
 		{"connection refused by server", true},
+		{"Connection Refused", true},
+		{"Connection Reset by peer", true},
+
+		// EOF — only matched via errors.Is, not substring; string-only messages won't match
+		{"unexpected EOF", false},
+		{"read: EOF", false},
+
+		// Broken pipe (case-insensitive)
+		{"write tcp 127.0.0.1:8080: write: broken pipe", true},
+		{"Broken Pipe", true},
+
+		// TLS errors (case-insensitive)
+		{"TLS handshake error", true},
+		{"tls handshake timeout", true},
+
+		// Overloaded — suffix match to avoid unrelated usage
+		{"server is overloaded", true},
+		{"Overloaded", true},
+		{"circuit overloaded in module X", false}, // not a server capacity error
+
+		// 529 (Anthropic overloaded status)
+		{"status 529: overloaded", true},
 	}
 
 	for _, tt := range tests {
 		got := isTransient(fmt.Errorf("%s", tt.msg))
 		if got != tt.transient {
 			t.Errorf("isTransient(%q) = %v, want %v", tt.msg, got, tt.transient)
+		}
+	}
+
+	// Wrapped io.EOF / io.ErrUnexpectedEOF — matched via errors.Is, not substring.
+	// These complement the string-only "unexpected EOF" / "read: EOF" cases above.
+	wrappedEOFTests := []struct {
+		err       error
+		transient bool
+	}{
+		{fmt.Errorf("connection closed: %w", io.EOF), true},
+		{fmt.Errorf("read body: %w", io.ErrUnexpectedEOF), true},
+		{fmt.Errorf("outer: %w", fmt.Errorf("inner: %w", io.EOF)), true},
+	}
+	for _, tt := range wrappedEOFTests {
+		got := isTransient(tt.err)
+		if got != tt.transient {
+			t.Errorf("isTransient(%v) = %v, want %v", tt.err, got, tt.transient)
 		}
 	}
 }

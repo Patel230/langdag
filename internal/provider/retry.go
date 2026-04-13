@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"math"
 	"math/rand"
@@ -176,24 +177,40 @@ func isTransient(err error) bool {
 	}
 
 	msg := err.Error()
+	lower := strings.ToLower(msg)
 
-	// Rate limit errors
-	if strings.Contains(msg, "429") || strings.Contains(msg, "rate limit") {
+	// Rate limit errors (case-insensitive to catch "Rate Limit Exceeded" etc.)
+	if containsStatusCode(msg, "429") || strings.Contains(lower, "rate limit") {
 		return true
 	}
 
-	// Server errors (5xx)
-	for _, code := range []string{"500", "502", "503", "504"} {
-		if strings.Contains(msg, code) {
+	// Server errors (5xx); 529 is Anthropic's "overloaded" status.
+	for _, code := range []string{"500", "502", "503", "504", "529"} {
+		if containsStatusCode(msg, code) {
 			return true
 		}
 	}
 
-	// Network errors
-	if strings.Contains(msg, "connection refused") ||
-		strings.Contains(msg, "connection reset") ||
-		strings.Contains(msg, "timeout") ||
-		strings.Contains(msg, "temporary failure") {
+	// Provider capacity errors (Anthropic returns "Overloaded" / "overloaded_error").
+	// Use suffix match + known error type to avoid matching unrelated messages
+	// like "circuit overloaded in module X".
+	trimmed := strings.TrimRight(lower, " .\n\r\t")
+	if strings.HasSuffix(trimmed, "overloaded") || strings.Contains(lower, "overloaded_error") {
+		return true
+	}
+
+	// Network / transport errors (case-insensitive)
+	if strings.Contains(lower, "connection refused") ||
+		strings.Contains(lower, "connection reset") ||
+		strings.Contains(lower, "timeout") ||
+		strings.Contains(lower, "temporary failure") ||
+		strings.Contains(lower, "broken pipe") ||
+		strings.Contains(lower, "tls handshake") {
+		return true
+	}
+
+	// IO errors (connection closed mid-stream)
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
 		return true
 	}
 
@@ -204,6 +221,26 @@ func isTransient(err error) bool {
 	}
 
 	return false
+}
+
+// containsStatusCode checks if a numeric status code appears bounded by
+// non-digit characters, avoiding false positives like "50032" matching "500".
+func containsStatusCode(msg, code string) bool {
+	idx := 0
+	for {
+		i := strings.Index(msg[idx:], code)
+		if i < 0 {
+			return false
+		}
+		pos := idx + i
+		end := pos + len(code)
+		leftOK := pos == 0 || msg[pos-1] < '0' || msg[pos-1] > '9'
+		rightOK := end == len(msg) || msg[end] < '0' || msg[end] > '9'
+		if leftOK && rightOK {
+			return true
+		}
+		idx = pos + 1
+	}
 }
 
 // errorAs is a helper that wraps errors.As for net.Error.
